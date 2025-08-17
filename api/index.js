@@ -30,7 +30,13 @@ const upload = multer({
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'WebP Converter API is running' });
+  console.log('Health check requested');
+  res.json({ 
+    status: 'OK', 
+    message: 'WebP Converter API is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // Convert single image to WebP
@@ -195,6 +201,16 @@ app.post('/api/convert-multiple', upload.array('images', 10), async (req, res) =
 // Handle all other routes
 app.all('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
+});
+
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('API Error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error', 
+    message: error.message,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Export for Vercel

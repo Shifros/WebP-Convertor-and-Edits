@@ -1,7 +1,6 @@
 const { readFile } = require('fs/promises');
-const path = require('path');
 const sharp = require('sharp');
-const formidable = require('formidable');
+const { formidable } = require('formidable');
 
 module.exports = async (req, res) => {
 	res.setHeader('Access-Control-Allow-Origin', '*');

@@ -799,7 +799,7 @@ const App = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Navyas playground</Text>
+        <Text style={styles.title}>WebP Edit and Converter</Text>
         <View style={styles.headerRight}>
           <View style={styles.serverStatusInline}>
             <Animated.View style={[

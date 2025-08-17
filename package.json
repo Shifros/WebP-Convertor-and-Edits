@@ -1,7 +1,7 @@
 {
   "name": "webp-converter",
   "version": "1.0.0",
-  "description": "A WebP converter built with React Native Web and Sharp backend",
+  "description": "WebP Edit and Converter - A powerful image editing and WebP conversion tool",
   "main": "index.js",
   "scripts": {
     "start": "webpack serve --mode development --open",

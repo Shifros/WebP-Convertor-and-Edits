@@ -15,13 +15,81 @@ const { width } = Dimensions.get('window');
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
 
+// --- Client-side WebP support and conversion helpers ---
+const supportsWebP = () => {
+  try {
+    const canvas = document.createElement('canvas');
+    return canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+  } catch {
+    return false;
+  }
+};
+
+const readImageFromFile = (file) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => resolve(img);
+  img.onerror = reject;
+  img.src = URL.createObjectURL(file);
+});
+
+const drawToCanvas = (img, opts) => {
+  const {
+    resizeWidth,
+    resizeHeight,
+    cropLeft,
+    cropTop,
+    cropWidth,
+    cropHeight,
+    imageSmoothingQuality = 'high'
+  } = opts || {};
+
+  const sx = cropLeft != null ? parseInt(cropLeft, 10) : 0;
+  const sy = cropTop != null ? parseInt(cropTop, 10) : 0;
+  const sWidth = cropWidth != null ? parseInt(cropWidth, 10) : img.naturalWidth;
+  const sHeight = cropHeight != null ? parseInt(cropHeight, 10) : img.naturalHeight;
+
+  const dWidth = resizeWidth ? parseInt(resizeWidth, 10) : sWidth;
+  const dHeight = resizeHeight ? parseInt(resizeHeight, 10) : sHeight;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = dWidth;
+  canvas.height = dHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = imageSmoothingQuality;
+  ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, dWidth, dHeight);
+  return canvas;
+};
+
+const convertFileToWebPClient = async (file, opts) => {
+  const qualityPercent = Math.max(1, Math.min(100, parseInt(opts?.quality ?? 80, 10)));
+  const quality = Math.max(0.05, Math.min(1, qualityPercent / 100));
+
+  const img = await readImageFromFile(file);
+  const canvas = drawToCanvas(img, opts);
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (!b) return reject(new Error('Browser failed to produce WebP blob'));
+      resolve(b);
+    }, 'image/webp', quality);
+  });
+
+  const originalSize = file.size;
+  const processedSize = blob.size;
+  const compressionRatio = originalSize > 0 ? Math.round(((originalSize - processedSize) / originalSize) * 100) : 0;
+  const filename = (file.name || 'image').replace(/\.[^/.]+$/, '') + '.webp';
+
+  return { blob, filename, originalSize, processedSize, compressionRatio };
+};
+
 const App = () => {
   const [images, setImages] = useState([]);
   const [compressionLevel, setCompressionLevel] = useState(80);
   const [isConverting, setIsConverting] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [convertedImages, setConvertedImages] = useState([]);
-  const [serverStatus, setServerStatus] = useState('checking');
+  const [serverStatus, setServerStatus] = useState('connected');
   const [convertingImages, setConvertingImages] = useState(new Set());
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -31,14 +99,20 @@ const App = () => {
 
 
 
-  // Check server status on component mount
+  // Check server status on component mount (not required for client conversion, keep as non-blocking)
   React.useEffect(() => {
-    checkServerStatus();
-    const interval = setInterval(checkServerStatus, 5000);
-    
-    return () => {
-      clearInterval(interval);
+    const checkServerStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/health`);
+        if (response.ok) setServerStatus('connected');
+        else setServerStatus('error');
+      } catch {
+        setServerStatus('error');
+      }
     };
+    checkServerStatus();
+    const interval = setInterval(checkServerStatus, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   // Pulse animation for server status
@@ -63,275 +137,180 @@ const App = () => {
     }
   }, [serverStatus, pulseAnim]);
 
-  const checkServerStatus = async () => {
-    try {
-      console.log('Checking server status...');
-      const response = await fetch(`${API_BASE_URL}/api/health`);
-      console.log('Server response:', response.status, response.ok);
-      if (response.ok) {
-        console.log('Server connected!');
-        setServerStatus('connected');
-      } else {
-        console.log('Server error status:', response.status);
-        setServerStatus('error');
-      }
-    } catch (error) {
-      console.error('Server connection error:', error);
-      setServerStatus('error');
-    }
-  };
-
-
-
-  // Handle file selection
-  const handleFileSelect = (event) => {
-    const files = Array.from(event.target.files);
-    handleFiles(files);
-  };
-
-  // Open cropper for an image
-  const openCropper = (image) => {
-    setCroppingImage(image);
-    setShowCropper(true);
-  };
-
-  // Handle crop completion
-  const handleCropComplete = async (cropData) => {
-    if (!cropData || !cropData.blob) {
-      Alert.alert('Error', 'Failed to crop image');
-      return;
-    }
-
-    try {
-      // Convert blob to file
-      const croppedFile = new File([cropData.blob], croppingImage.name, {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
-
-      // Create new image object with cropped file
-      const croppedImage = {
-        ...croppingImage,
-        file: croppedFile,
-        url: URL.createObjectURL(cropData.blob),
-        cropInfo: cropData
-      };
-
-      // Replace the original image with cropped version
-      setImages(prev => prev.map(img => 
-        img.id === croppingImage.id ? croppedImage : img
-      ));
-
-      setShowCropper(false);
-      setCroppingImage(null);
-
-      Alert.alert(
-        'Crop Applied',
-        `Image cropped and resized to ${cropData.resize.width}×${cropData.resize.height}`
-      );
-
-    } catch (error) {
-      console.error('Crop completion error:', error);
-      Alert.alert('Error', 'Failed to apply crop');
-    }
-  };
-
-  // Cancel cropping
-  const cancelCropping = () => {
-    setShowCropper(false);
-    setCroppingImage(null);
-  };
-
-
-
   const handleFiles = (files) => {
-    console.log('handleFiles called with:', files.length, 'files');
-    console.log('File types:', files.map(f => f.type));
-    
-    const imageFiles = files.filter(file => 
-      file.type.startsWith('image/') && 
-      ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'image/bmp'].includes(file.type)
-    );
-
-    console.log('Filtered image files:', imageFiles.length);
-    console.log('Image file names:', imageFiles.map(f => f.name));
-
-    const newImages = imageFiles.map(file => ({
+    const newImages = files.map(file => ({
       file,
       url: URL.createObjectURL(file),
       name: file.name,
       size: file.size,
       type: file.type,
-      id: Date.now() + Math.random() // Unique ID for each image
+      id: Date.now() + Math.random()
     }));
-
-    console.log('Created new images:', newImages.length);
-    setImages(prev => {
-      const updated = [...prev, ...newImages];
-      console.log('Total images after update:', updated.length);
-      return updated;
-    });
+    setImages(prev => [...prev, ...newImages]);
   };
 
-  // Remove single image
   const removeImage = (imageId) => {
     setImages(prev => {
       const newImages = prev.filter(img => img.id !== imageId);
       const removedImage = prev.find(img => img.id === imageId);
-      if (removedImage) {
-        URL.revokeObjectURL(removedImage.url);
-      }
+      if (removedImage) URL.revokeObjectURL(removedImage.url);
       return newImages;
     });
   };
 
-
-
-  // Convert single image
+  // Convert single image (client-first)
   const convertSingleImage = async (image) => {
-    if (serverStatus !== 'connected') {
-      Alert.alert('Server Error', 'Cannot connect to the conversion server. Please make sure the server is running.');
-      return;
-    }
-
     setConvertingImages(prev => new Set(prev).add(image.id));
 
     try {
-      const formData = new FormData();
-      formData.append('image', image.file);
-      formData.append('quality', compressionLevel);
-      formData.append('effort', 4);
-
-      const response = await fetch(`${API_BASE_URL}/api/convert`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Conversion failed');
-      }
-
-      const result = await response.json();
-      
-      if (result.success) {
-        const webPBlob = new Blob([Uint8Array.from(atob(result.data), c => c.charCodeAt(0))], {
-          type: 'image/webp'
+      // Client-side path
+      if (supportsWebP()) {
+        const { blob, filename, originalSize, processedSize, compressionRatio } = await convertFileToWebPClient(image.file, {
+          quality: compressionLevel
         });
-        const webPUrl = URL.createObjectURL(webPBlob);
-        
+        const webPUrl = URL.createObjectURL(blob);
         const convertedImage = {
           url: webPUrl,
-          name: result.filename,
-          size: result.processedSize,
+          name: filename,
+          size: processedSize,
           originalName: image.name,
-          originalSize: result.originalSize,
-          compressionRatio: result.compressionRatio
+          originalSize,
+          compressionRatio
         };
-
         setConvertedImages(prev => [...prev, convertedImage]);
-        
-        // Show success popup instead of removing the image
         Alert.alert(
           'Conversion Successful!',
-          `${image.name} has been converted to WebP format.\n\nOriginal: ${formatFileSize(result.originalSize)}\nConverted: ${formatFileSize(result.processedSize)}\nCompression: ${result.compressionRatio}% smaller`,
-          [
-            {
-              text: 'OK',
-              style: 'default'
-            }
-          ]
+          `${image.name} has been converted to WebP format.\n\nOriginal: ${formatFileSize(originalSize)}\nConverted: ${formatFileSize(processedSize)}\nCompression: ${compressionRatio}% smaller`,
+          [{ text: 'OK', style: 'default' }]
         );
+        return;
       }
+
+      // Fallback: small files via server
+      if (image.size <= 4 * 1024 * 1024) {
+        const formData = new FormData();
+        formData.append('image', image.file);
+        formData.append('quality', compressionLevel);
+        formData.append('effort', 4);
+        const response = await fetch(`${API_BASE_URL}/api/convert`, { method: 'POST', body: formData });
+        if (!response.ok) {
+          let errMsg = `HTTP ${response.status}`;
+          try { const e = await response.json(); if (e?.error) errMsg = e.error; } catch {}
+          throw new Error(errMsg);
+        }
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const result = await response.json();
+          if (result?.success && result?.data) {
+            const webPBlob = new Blob([Uint8Array.from(atob(result.data), c => c.charCodeAt(0))], { type: 'image/webp' });
+            const webPUrl = URL.createObjectURL(webPBlob);
+            const convertedImage = {
+              url: webPUrl,
+              name: result.filename || (image.name?.replace(/\.[^/.]+$/, '') + '.webp'),
+              size: result.processedSize,
+              originalName: image.name,
+              originalSize: result.originalSize,
+              compressionRatio: result.compressionRatio
+            };
+            setConvertedImages(prev => [...prev, convertedImage]);
+            return;
+          }
+          throw new Error('Unexpected API response');
+        } else {
+          const webPBlob = await response.blob();
+          const webPUrl = URL.createObjectURL(webPBlob);
+          const convertedImage = {
+            url: webPUrl,
+            name: image.name?.replace(/\.[^/.]+$/, '') + '.webp',
+            size: webPBlob.size,
+            originalName: image.name,
+            originalSize: image.size,
+            compressionRatio: image.size ? Math.round(((image.size - webPBlob.size) / image.size) * 100) : undefined
+          };
+          setConvertedImages(prev => [...prev, convertedImage]);
+          return;
+        }
+      }
+
+      throw new Error('Your browser cannot convert to WebP locally and the image is too large for server fallback.');
     } catch (error) {
       console.error(`Error converting ${image.name}:`, error);
       Alert.alert('Error', `Failed to convert ${image.name}: ${error.message}`);
     } finally {
-      setConvertingImages(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(image.id);
-        return newSet;
-      });
+      setConvertingImages(prev => { const s = new Set(prev); s.delete(image.id); return s; });
     }
+  };
+
+  // Convert batch images (client-first)
+  const convertBatchImages = async (images) => {
+    const results = [];
+    // Try client-side for each image; if unsupported and small, fallback per-file
+    for (const image of images) {
+      try {
+        if (supportsWebP()) {
+          const { blob, filename, originalSize, processedSize, compressionRatio } = await convertFileToWebPClient(image.file, {
+            quality: compressionLevel
+          });
+          const webPUrl = URL.createObjectURL(blob);
+          results.push({
+            url: webPUrl,
+            name: filename,
+            size: processedSize,
+            originalName: image.name,
+            originalSize,
+            compressionRatio
+          });
+        } else if (image.size <= 4 * 1024 * 1024) {
+          const formData = new FormData();
+          formData.append('images', image.file);
+          formData.append('quality', compressionLevel);
+          formData.append('effort', 4);
+          const response = await fetch(`${API_BASE_URL}/api/convert-multiple`, { method: 'POST', body: formData });
+          if (!response.ok) {
+            let errMsg = `HTTP ${response.status}`;
+            try { const e = await response.json(); if (e?.error) errMsg = e.error; } catch {}
+            throw new Error(errMsg);
+          }
+          const result = await response.json();
+          if (result?.success && Array.isArray(result.results)) {
+            result.results.filter(r => r.success && r.data).forEach(item => {
+              const webPBlob = new Blob([Uint8Array.from(atob(item.data), c => c.charCodeAt(0))], { type: 'image/webp' });
+              const webPUrl = URL.createObjectURL(webPBlob);
+              results.push({
+                url: webPUrl,
+                name: item.filename,
+                size: item.processedSize,
+                originalName: item.originalName,
+                originalSize: item.originalSize,
+                compressionRatio: item.compressionRatio
+              });
+            });
+          }
+        } else {
+          throw new Error('Large image cannot be uploaded to server; use a modern browser for local conversion.');
+        }
+      } catch (e) {
+        console.error('Batch item failed', image.name, e);
+      }
+    }
+    return results;
   };
 
   // Convert all images
   const convertAllImages = async () => {
     if (images.length === 0) return;
-    
-    if (serverStatus !== 'connected') {
-      Alert.alert('Server Error', 'Cannot connect to the conversion server. Please make sure the server is running.');
-      return;
-    }
-    
     setIsConverting(true);
-    const results = [];
-
     try {
-      // Batch conversion
       const batchResults = await convertBatchImages(images);
-      results.push(...batchResults);
-      
-      // Clear all images after successful batch conversion
+      setConvertedImages(batchResults);
       clearAllImages();
     } catch (error) {
       console.error('Conversion error:', error);
       Alert.alert('Error', 'Failed to convert images. Please try again.');
     }
-
-    setConvertedImages(results);
     setIsConverting(false);
   };
 
-  // Convert batch images
-  const convertBatchImages = async (images) => {
-    try {
-      const formData = new FormData();
-      images.forEach(image => {
-        formData.append('images', image.file);
-      });
-      formData.append('quality', compressionLevel);
-      formData.append('effort', 4);
-
-      const response = await fetch(`${API_BASE_URL}/api/convert-multiple`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Batch conversion failed');
-      }
-
-      const result = await response.json();
-      
-      if (result.success) {
-        return result.results
-          .filter(item => !item.error)
-          .map(item => {
-            const webPBlob = new Blob([Uint8Array.from(atob(item.data), c => c.charCodeAt(0))], {
-              type: 'image/webp'
-            });
-            const webPUrl = URL.createObjectURL(webPBlob);
-            
-            return {
-              url: webPUrl,
-              name: item.filename,
-              size: item.processedSize,
-              originalName: item.originalName,
-              originalSize: item.originalSize,
-              compressionRatio: item.compressionRatio
-            };
-          });
-      }
-    } catch (error) {
-      console.error('Batch conversion error:', error);
-      Alert.alert('Error', `Batch conversion failed: ${error.message}`);
-    }
-    return [];
-  };
-
-  // Clear all images
   const clearAllImages = () => {
     images.forEach(image => URL.revokeObjectURL(image.url));
     setImages([]);
@@ -837,7 +816,7 @@ const App = () => {
               input.type = 'file';
               input.multiple = true;
               input.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp,image/tiff,image/bmp';
-              input.onchange = handleFileSelect;
+              input.onchange = (event) => handleFiles(Array.from(event.target.files));
               input.click();
             }}
             onDragOver={(e) => e.preventDefault()}

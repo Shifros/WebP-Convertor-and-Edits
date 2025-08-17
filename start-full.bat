@@ -1,0 +1,13 @@
+@echo off
+echo ========================================
+echo    WebP Converter - Full Stack App
+echo ========================================
+echo.
+echo Starting both frontend and backend servers...
+echo.
+echo Frontend: http://localhost:3000
+echo Backend:  http://localhost:3001
+echo.
+echo Press Ctrl+C to stop both servers
+echo.
+npm run start:full

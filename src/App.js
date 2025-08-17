@@ -13,7 +13,7 @@ import ImageCropper from './ImageCropper';
 
 const { width } = Dimensions.get('window');
 
-const API_BASE_URL = 'http://localhost:3001';
+const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
 
 const App = () => {
   const [images, setImages] = useState([]);
@@ -66,7 +66,7 @@ const App = () => {
   const checkServerStatus = async () => {
     try {
       console.log('Checking server status...');
-      const response = await fetch(`${API_BASE_URL}/health`);
+      const response = await fetch(`${API_BASE_URL}/api/health`);
       console.log('Server response:', response.status, response.ok);
       if (response.ok) {
         console.log('Server connected!');
@@ -202,7 +202,7 @@ const App = () => {
       formData.append('quality', compressionLevel);
       formData.append('effort', 4);
 
-      const response = await fetch(`${API_BASE_URL}/convert`, {
+      const response = await fetch(`${API_BASE_URL}/api/convert`, {
         method: 'POST',
         body: formData
       });
@@ -293,7 +293,7 @@ const App = () => {
       formData.append('quality', compressionLevel);
       formData.append('effort', 4);
 
-      const response = await fetch(`${API_BASE_URL}/convert-batch`, {
+      const response = await fetch(`${API_BASE_URL}/api/convert-multiple`, {
         method: 'POST',
         body: formData
       });

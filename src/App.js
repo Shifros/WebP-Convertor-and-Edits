@@ -299,16 +299,34 @@ const App = () => {
   // Convert all images
   const convertAllImages = async () => {
     if (images.length === 0) return;
-    setIsConverting(true);
-    try {
-      const batchResults = await convertBatchImages(images);
-      setConvertedImages(batchResults);
-      clearAllImages();
-    } catch (error) {
-      console.error('Conversion error:', error);
-      Alert.alert('Error', 'Failed to convert images. Please try again.');
-    }
-    setIsConverting(false);
+    
+    // Show confirmation popup
+    Alert.alert(
+      'Convert All Images',
+      'This will convert all uploaded images to WebP and clear the current list. Any previously converted images will be replaced. Continue?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Convert All',
+          style: 'destructive',
+          onPress: async () => {
+            setIsConverting(true);
+            try {
+              const batchResults = await convertBatchImages(images);
+              setConvertedImages(batchResults);
+              clearAllImages();
+            } catch (error) {
+              console.error('Conversion error:', error);
+              Alert.alert('Error', 'Failed to convert images. Please try again.');
+            }
+            setIsConverting(false);
+          }
+        }
+      ]
+    );
   };
 
   const clearAllImages = () => {
@@ -926,7 +944,7 @@ const App = () => {
                     <Text style={styles.buttonText}>Converting All...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.buttonText}>Convert All ({images.length})</Text>
+                  <Text style={styles.buttonText}>Convert All ({images.length}) - Clears Previous</Text>
                 )}
               </TouchableOpacity>
               

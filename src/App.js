@@ -316,6 +316,56 @@ const App = () => {
     setImages([]);
   };
 
+  // Handle file selection
+  const handleFileSelect = (event) => {
+    const files = Array.from(event.target.files);
+    handleFiles(files);
+  };
+
+  // Open cropper for an image
+  const openCropper = (image) => {
+    setCroppingImage(image);
+    setShowCropper(true);
+  };
+
+  // Handle crop completion
+  const handleCropComplete = async (cropData) => {
+    if (!cropData || !cropData.blob) {
+      Alert.alert('Error', 'Failed to crop image');
+      return;
+    }
+
+    try {
+      // Convert blob to file
+      const croppedFile = new File([cropData.blob], croppingImage.name, {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+
+      // Create new image object with cropped file
+      const croppedImage = {
+        ...croppingImage,
+        file: croppedFile,
+        url: URL.createObjectURL(cropData.blob),
+        name: croppingImage.name.replace(/\.[^/.]+$/, '') + '_cropped.jpg',
+        size: croppedFile.size,
+        type: 'image/jpeg'
+      };
+
+      // Replace the original image with the cropped one
+      setImages(prev => prev.map(img => 
+        img.id === croppingImage.id ? croppedImage : img
+      ));
+
+      setShowCropper(false);
+      setCroppingImage(null);
+
+    } catch (error) {
+      console.error('Error handling crop:', error);
+      Alert.alert('Error', 'Failed to process cropped image');
+    }
+  };
+
   // Clear all converted images
   const clearAllConverted = () => {
     convertedImages.forEach(image => URL.revokeObjectURL(image.url));
@@ -816,7 +866,7 @@ const App = () => {
               input.type = 'file';
               input.multiple = true;
               input.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp,image/tiff,image/bmp';
-              input.onchange = (event) => handleFiles(Array.from(event.target.files));
+              input.onchange = (event) => handleFileSelect(event);
               input.click();
             }}
             onDragOver={(e) => e.preventDefault()}
@@ -1006,7 +1056,7 @@ const App = () => {
           <ImageCropper
             image={croppingImage}
             onCropComplete={handleCropComplete}
-            onCancel={cancelCropping}
+            onCancel={() => setShowCropper(false)}
             darkMode={darkMode}
           />
         </View>

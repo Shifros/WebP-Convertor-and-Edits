@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Navyas Playground - WebP Converter
 
 A modern WebP converter built with React Native Web and Sharp backend, featuring advanced image cropping and resizing capabilities.
@@ -110,3 +111,7 @@ MIT License - feel free to use this project for personal or commercial purposes.
 ## Support
 
 For issues and questions, please open an issue on GitHub.
+=======
+# WebP-Convertor-and-Edits
+React + Node.js app to convert images to WebP and perform edits (resize, crop, dimension changes) using Sharp.
+>>>>>>> dc7b2a3bedba7ec9d431e4a0e759df4f68061218

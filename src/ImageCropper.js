@@ -13,6 +13,11 @@ import {
 
 const { width: screenWidth } = Dimensions.get('window');
 
+// Responsive breakpoints for cropper
+const isMobile = screenWidth < 768;
+const isTablet = screenWidth >= 768 && screenWidth < 1024;
+const isDesktop = screenWidth >= 1024;
+
 // Format file size helper function
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 Bytes';
@@ -50,6 +55,231 @@ const ImageCropper = ({ image, onCropComplete, onCancel, darkMode }) => {
   const [customHeight, setCustomHeight] = useState('');
   const [customRatio, setCustomRatio] = useState(null);
   const imgRef = useRef(null);
+
+  // Create dynamic styles based on darkMode
+  const getStyles = (darkMode) => StyleSheet.create({
+    container: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: '100vh',
+      padding: isMobile ? 10 : 20,
+      overflow: 'auto',
+      zIndex: 1000,
+      backgroundColor: darkMode ? '#000000' : '#ffffff',
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    title: {
+      fontSize: isMobile ? 18 : 20,
+      fontWeight: 'bold',
+      color: darkMode ? '#ffffff' : '#000000',
+      marginBottom: isMobile ? 15 : 20,
+    },
+    closeButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: '#ff4444',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    closeButtonText: {
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    content: {
+      flex: 1,
+      flexDirection: isMobile ? 'column' : 'row',
+      height: isMobile ? 'auto' : '100vh',
+      alignItems: isMobile ? 'stretch' : 'flex-start',
+      justifyContent: 'center',
+      paddingTop: isMobile ? 10 : 20,
+    },
+    leftColumn: {
+      width: isMobile ? '100%' : '60%',
+      paddingRight: isMobile ? 0 : 20,
+      marginBottom: isMobile ? 20 : 0,
+    },
+    rightColumn: {
+      width: isMobile ? '100%' : '40%',
+      paddingLeft: isMobile ? 0 : 20,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'flex-start',
+      alignItems: 'flex-start',
+      height: 'auto',
+      paddingTop: 0,
+    },
+    ratioControls: {
+      marginBottom: isMobile ? 15 : 20,
+      padding: isMobile ? 12 : 15,
+      borderWidth: 1,
+      borderRadius: isMobile ? 6 : 8,
+      backgroundColor: darkMode ? '#1a1a1a' : '#f8f8f8',
+      borderColor: darkMode ? '#333333' : '#e0e0e0',
+    },
+    ratioTitle: {
+      fontSize: isMobile ? 14 : 16,
+      fontWeight: '600',
+      marginBottom: isMobile ? 12 : 15,
+      color: darkMode ? '#ffffff' : '#000000',
+    },
+    ratioButtons: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: isMobile ? 6 : 8,
+      marginBottom: isMobile ? 8 : 10,
+    },
+    ratioButton: {
+      paddingHorizontal: isMobile ? 8 : 12,
+      paddingVertical: isMobile ? 4 : 6,
+      borderRadius: isMobile ? 4 : 6,
+      borderWidth: 1,
+      minWidth: isMobile ? 60 : 80,
+      alignItems: 'center',
+      backgroundColor: darkMode ? '#333333' : '#ffffff',
+      borderColor: darkMode ? '#555555' : '#cccccc',
+    },
+    ratioButtonSelected: {
+      borderColor: darkMode ? '#ffffff' : '#000000',
+      backgroundColor: darkMode ? '#ffffff' : '#000000',
+    },
+    ratioButtonText: {
+      fontSize: isMobile ? 10 : 12,
+      fontWeight: '500',
+      color: darkMode ? '#ffffff' : '#000000',
+    },
+    ratioButtonTextSelected: {
+      fontSize: isMobile ? 10 : 12,
+      fontWeight: '500',
+      color: darkMode ? '#000000' : '#ffffff',
+    },
+    lockInfo: {
+      padding: isMobile ? 6 : 8,
+      backgroundColor: 'rgba(255, 149, 0, 0.1)',
+      borderRadius: isMobile ? 4 : 6,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 149, 0, 0.3)',
+    },
+    lockText: {
+      fontSize: isMobile ? 10 : 12,
+      fontWeight: '500',
+      textAlign: 'center',
+    },
+    cropContainer: {
+      height: isMobile ? '50vh' : '100%',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'transparent',
+      minHeight: isMobile ? '300px' : 'auto',
+    },
+    info: {
+      marginBottom: isMobile ? 15 : 20,
+    },
+    infoText: {
+      fontSize: isMobile ? 10 : 12,
+      marginBottom: isMobile ? 1 : 2,
+      color: darkMode ? '#ffffff' : '#000000',
+    },
+    customSizeControls: {
+      marginBottom: isMobile ? 15 : 20,
+      padding: isMobile ? 12 : 15,
+      borderWidth: 1,
+      borderRadius: isMobile ? 6 : 8,
+      backgroundColor: darkMode ? '#1a1a1a' : '#f8f8f8',
+      borderColor: darkMode ? '#333333' : '#e0e0e0',
+    },
+    sizeInputContainer: {
+      marginBottom: 10,
+    },
+    sizeInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    sizeLabel: {
+      fontSize: 14,
+      fontWeight: '500',
+      width: 60,
+      marginRight: 10,
+    },
+    sizeInput: {
+      flex: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 6,
+      borderWidth: 1,
+      fontSize: 14,
+    },
+    currentDimensions: {
+      fontSize: 12,
+      marginLeft: 8,
+      fontStyle: 'italic',
+    },
+    warningInfo: {
+      padding: 8,
+      backgroundColor: 'rgba(255, 68, 68, 0.1)',
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 68, 68, 0.3)',
+      marginBottom: 10,
+    },
+    warningText: {
+      fontSize: 12,
+      fontWeight: '500',
+      textAlign: 'center',
+    },
+    actions: {
+      flexDirection: isMobile ? 'column' : 'row',
+      justifyContent: 'flex-start',
+      gap: isMobile ? 8 : 10,
+    },
+    button: {
+      paddingVertical: isMobile ? 10 : 12,
+      paddingHorizontal: isMobile ? 16 : 20,
+      borderRadius: isMobile ? 6 : 8,
+      minWidth: isMobile ? 80 : 100,
+      alignItems: 'center',
+    },
+    cancelButton: {
+      backgroundColor: darkMode ? '#333333' : '#666666',
+    },
+    cancelButtonText: {
+      color: '#ffffff',
+      fontWeight: '600',
+    },
+    applyButton: {
+      backgroundColor: darkMode ? '#ffffff' : '#000000',
+    },
+    applyButtonText: {
+      color: darkMode ? '#000000' : '#ffffff',
+      fontWeight: '600',
+    },
+    resizeButton: {
+      backgroundColor: darkMode ? '#ffffff' : '#000000',
+    },
+    resizeButtonText: {
+      color: darkMode ? '#000000' : '#ffffff',
+      fontWeight: '600',
+    },
+    loadingText: {
+      fontSize: 16,
+      textAlign: 'center',
+      marginTop: 50,
+      color: darkMode ? '#ffffff' : '#000000',
+    },
+  });
+
+  const styles = getStyles(darkMode);
 
   // Load image when component mounts
   React.useEffect(() => {
@@ -330,14 +560,14 @@ const ImageCropper = ({ image, onCropComplete, onCancel, darkMode }) => {
                 ref={imgRef}
                 src={imageSrc}
                 onLoad={onImageLoad}
-                                 style={{
-                   width: 'auto',
-                   height: 'auto',
-                   maxWidth: '100%',
-                   maxHeight: '90vh',
-                   display: 'block',
-                   objectFit: 'contain'
-                 }}
+                style={{
+                  width: 'auto',
+                  height: 'auto',
+                  maxWidth: '100%',
+                  maxHeight: '90vh',
+                  display: 'block',
+                  objectFit: 'contain'
+                }}
                 alt="Crop preview"
               />
             </ReactCrop>
@@ -363,23 +593,10 @@ const ImageCropper = ({ image, onCropComplete, onCancel, darkMode }) => {
                   onPress={() => handleRatioSelect(ratio.value)}
                   style={[
                     styles.ratioButton,
-                    selectedRatio === ratio.value && styles.ratioButtonSelected,
-                    { 
-                      backgroundColor: selectedRatio === ratio.value 
-                        ? '#34C759' 
-                        : darkMode ? '#333333' : '#f0f0f0',
-                      borderColor: darkMode ? '#555555' : '#cccccc'
-                    }
+                    selectedRatio === ratio.value && styles.ratioButtonSelected
                   ]}
                 >
-                  <Text style={[
-                    styles.ratioButtonText,
-                    { 
-                      color: selectedRatio === ratio.value 
-                        ? '#ffffff' 
-                        : darkMode ? '#ffffff' : '#000000'
-                    }
-                  ]}>
+                  <Text style={selectedRatio === ratio.value ? styles.ratioButtonTextSelected : styles.ratioButtonText}>
                     {ratio.label}
                   </Text>
                 </TouchableOpacity>
@@ -479,13 +696,13 @@ const ImageCropper = ({ image, onCropComplete, onCancel, darkMode }) => {
 
            {/* Info Section */}
            <View style={[styles.info, { marginTop: 20 }]}>
-             <Text style={[styles.infoText, { color: darkMode ? '#cccccc' : '#666666' }]}>
+             <Text style={styles.infoText}>
                Original Size: {image.size ? formatFileSize(image.size) : 'Unknown'}
              </Text>
-             <Text style={[styles.infoText, { color: darkMode ? '#007AFF' : '#007AFF', fontWeight: 'bold' }]}>
+             <Text style={[styles.infoText, { fontWeight: 'bold' }]}>
                Expected Size: {expectedSizeBytes ? formatFileSize(expectedSizeBytes) : 'Unknown'}
              </Text>
-             <Text style={[styles.infoText, { color: darkMode ? '#34C759' : '#34C759', fontWeight: 'bold' }]}>
+             <Text style={[styles.infoText, { fontWeight: 'bold' }]}>
                {isLocked ? 'Drag to resize while maintaining aspect ratio' : 'Drag to select and resize freely'}
              </Text>
            </View>
@@ -494,210 +711,5 @@ const ImageCropper = ({ image, onCropComplete, onCancel, darkMode }) => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '100vh',
-    padding: 20,
-    overflow: 'auto',
-    zIndex: 1000,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#ff4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  content: {
-    flex: 1,
-    flexDirection: 'row',
-    height: '100vh',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    paddingTop: 20,
-  },
-  leftColumn: {
-    width: '60%',
-    paddingRight: 20,
-  },
-  rightColumn: {
-    width: '40%',
-    paddingLeft: 20,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-start',
-    height: 'auto',
-    paddingTop: 0,
-  },
-  ratioControls: {
-    marginBottom: 20,
-    padding: 15,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  ratioTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  ratioButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 10,
-  },
-  ratioButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  ratioButtonSelected: {
-    borderColor: '#34C759',
-  },
-  ratioButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-
-  lockInfo: {
-    padding: 8,
-    backgroundColor: 'rgba(255, 149, 0, 0.1)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 149, 0, 0.3)',
-  },
-  lockText: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  cropContainer: {
-    height: '100%',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  info: {
-    padding: 10,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 6,
-    marginBottom: 20,
-  },
-  infoText: {
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  customSizeControls: {
-    marginBottom: 20,
-    padding: 15,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  sizeInputContainer: {
-    marginBottom: 10,
-  },
-  sizeInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sizeLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    width: 60,
-    marginRight: 10,
-  },
-  sizeInput: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    fontSize: 14,
-  },
-  currentDimensions: {
-    fontSize: 12,
-    marginLeft: 8,
-    fontStyle: 'italic',
-  },
-  warningInfo: {
-    padding: 8,
-    backgroundColor: 'rgba(255, 68, 68, 0.1)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 68, 68, 0.3)',
-    marginBottom: 10,
-  },
-  warningText: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 10,
-  },
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#666666',
-  },
-  cancelButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  applyButton: {
-    backgroundColor: '#34C759',
-  },
-  applyButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  resizeButton: {
-    backgroundColor: '#007AFF',
-  },
-  resizeButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  loadingText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 50,
-  },
-});
 
 export default ImageCropper;

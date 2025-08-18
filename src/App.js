@@ -13,6 +13,33 @@ import ImageCropper from './ImageCropper';
 
 const { width } = Dimensions.get('window');
 
+// Responsive breakpoints
+const BREAKPOINTS = {
+  mobile: 768,
+  tablet: 1024,
+  laptop: 1440,
+};
+
+// Responsive utilities
+const isMobile = width < BREAKPOINTS.mobile;
+const isTablet = width >= BREAKPOINTS.mobile && width < BREAKPOINTS.tablet;
+const isLaptop = width >= BREAKPOINTS.tablet && width < BREAKPOINTS.laptop;
+const isDesktop = width >= BREAKPOINTS.laptop;
+
+// Responsive grid calculations
+const getGridColumns = () => {
+  if (isMobile) return 2; // 2 columns on mobile
+  if (isTablet) return 4; // 4 columns on tablet
+  if (isLaptop) return 5; // 5 columns on laptop
+  return 6; // 6 columns on desktop
+};
+
+const getImageItemWidth = () => {
+  const columns = getGridColumns();
+  const padding = isMobile ? 40 : 100; // Less padding on mobile
+  return (width - padding) / columns;
+};
+
 const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
 
 // --- Client-side WebP support and conversion helpers ---
@@ -300,33 +327,44 @@ const App = () => {
   const convertAllImages = async () => {
     if (images.length === 0) return;
     
-    // Show confirmation popup
-    Alert.alert(
-      'Convert All Images',
-      'This will convert all uploaded images to WebP and clear the current list. Any previously converted images will be replaced. Continue?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Convert All',
-          style: 'destructive',
-          onPress: async () => {
-            setIsConverting(true);
-            try {
-              const batchResults = await convertBatchImages(images);
-              setConvertedImages(batchResults);
-              clearAllImages();
-            } catch (error) {
-              console.error('Conversion error:', error);
-              Alert.alert('Error', 'Failed to convert images. Please try again.');
-            }
-            setIsConverting(false);
-          }
-        }
-      ]
-    );
+    // Only show warning if there are already converted images
+    if (convertedImages.length > 0) {
+      // Web: use confirm (Alert buttons are not fully supported in RN Web)
+      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        const ok = window.confirm('This will convert all uploaded images to WebP and clear the current list. Any previously converted images will be replaced. Continue?');
+        if (!ok) return;
+      } else {
+        // Native fallback: Alert with buttons
+        Alert.alert(
+          'Convert All Images',
+          'This will convert all uploaded images to WebP and clear the current list. Any previously converted images will be replaced. Continue?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Convert All', style: 'destructive', onPress: async () => {
+              await performConvertAll();
+            }}
+          ]
+        );
+        return;
+      }
+    }
+    
+    // If no converted images exist, proceed directly
+    await performConvertAll();
+  };
+
+  // Helper function to perform the actual conversion
+  const performConvertAll = async () => {
+    setIsConverting(true);
+    try {
+      const batchResults = await convertBatchImages(images);
+      setConvertedImages(prev => [...prev, ...batchResults]);
+      clearAllImages();
+    } catch (error) {
+      console.error('Conversion error:', error);
+      Alert.alert('Error', 'Failed to convert images. Please try again.');
+    }
+    setIsConverting(false);
   };
 
   const clearAllImages = () => {
@@ -388,6 +426,13 @@ const App = () => {
   const clearAllConverted = () => {
     convertedImages.forEach(image => URL.revokeObjectURL(image.url));
     setConvertedImages([]);
+  };
+
+  // Remove individual converted image
+  const removeConvertedImage = (index) => {
+    const imageToRemove = convertedImages[index];
+    URL.revokeObjectURL(imageToRemove.url);
+    setConvertedImages(prev => prev.filter((_, i) => i !== index));
   };
 
   // Download individual image
@@ -456,32 +501,35 @@ const App = () => {
     container: {
       flex: 1,
       backgroundColor: darkMode ? '#000000' : '#ffffff',
-      padding: 60,
+      padding: isMobile ? 20 : isTablet ? 40 : 60,
       paddingTop: 0,
-      paddingBottom: 90,
+      paddingBottom: isMobile ? 60 : 90,
     },
     header: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 40,
-      paddingHorizontal: 10,
-      marginTop: 60,
+      flexDirection: isMobile ? 'column' : 'row',
+      justifyContent: isMobile ? 'flex-start' : 'space-between',
+      alignItems: isMobile ? 'flex-start' : 'center',
+      marginBottom: isMobile ? 20 : 40,
+      paddingHorizontal: isMobile ? 5 : 10,
+      marginTop: isMobile ? 20 : 60,
+      gap: isMobile ? 15 : 0,
     },
     titleRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 15,
+      gap: isMobile ? 10 : 15,
+      flexWrap: isMobile ? 'wrap' : 'nowrap',
     },
     title: {
-      fontSize: 32,
+      fontSize: isMobile ? 24 : isTablet ? 28 : 32,
       fontWeight: 'bold',
       color: darkMode ? '#ffffff' : '#000000',
     },
     headerRight: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 15,
+      gap: isMobile ? 10 : 15,
+      flexWrap: isMobile ? 'wrap' : 'nowrap',
     },
     serverStatusInline: {
       flexDirection: 'row',
@@ -529,10 +577,10 @@ const App = () => {
     },
     section: {
       backgroundColor: darkMode ? '#1a1a1a' : '#ffffff',
-      borderRadius: 15,
-      padding: 25,
-      marginBottom: 25,
-      marginHorizontal: 5,
+      borderRadius: isMobile ? 10 : 15,
+      padding: isMobile ? 15 : isTablet ? 20 : 25,
+      marginBottom: isMobile ? 15 : 25,
+      marginHorizontal: isMobile ? 2 : 5,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: darkMode ? 0.3 : 0.1,
@@ -542,17 +590,17 @@ const App = () => {
       borderColor: darkMode ? '#333333' : '#e0e0e0',
     },
     sectionTitle: {
-      fontSize: 22,
+      fontSize: isMobile ? 18 : isTablet ? 20 : 22,
       fontWeight: '700',
-      marginBottom: 20,
+      marginBottom: isMobile ? 15 : 20,
       color: darkMode ? '#ffffff' : '#000000',
     },
     uploadZone: {
       borderWidth: 2,
       borderStyle: 'dashed',
       borderColor: darkMode ? '#ffffff' : '#000000',
-      borderRadius: 10,
-      padding: 30,
+      borderRadius: isMobile ? 8 : 10,
+      padding: isMobile ? 20 : isTablet ? 25 : 30,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: darkMode ? '#0a0a0a' : '#f8f8f8',
@@ -574,14 +622,16 @@ const App = () => {
       textAlign: 'center',
     },
     selectButton: {
-      backgroundColor: '#007AFF',
+      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
       paddingHorizontal: 25,
       paddingVertical: 12,
       borderRadius: 8,
       marginTop: 15,
+      borderWidth: 1,
+      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
     },
     selectButtonText: {
-      color: '#ffffff',
+      color: darkMode ? '#ffffff' : '#ffffff',
       fontSize: 16,
       fontWeight: '600',
     },
@@ -608,61 +658,61 @@ const App = () => {
       fontWeight: '500',
     },
     buttonRow: {
-      flexDirection: 'row',
-      gap: 15,
-      marginBottom: 25,
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: isMobile ? 10 : 15,
+      marginBottom: isMobile ? 15 : 25,
       marginTop: 10,
     },
     convertAllButton: {
-      flex: 1,
-      backgroundColor: '#34C759',
-      paddingVertical: 15,
+      flex: isMobile ? 0 : 1,
+      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
+      paddingVertical: isMobile ? 12 : 15,
       borderRadius: 8,
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: '#34C759',
+      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
     },
     convertAllButtonDisabled: {
-      backgroundColor: darkMode ? '#333333' : '#cccccc',
-      borderColor: darkMode ? '#555555' : '#999999',
+      backgroundColor: darkMode ? '#2a2a2a' : '#d9d9d9',
+      borderColor: darkMode ? '#3a3a3a' : '#bfbfbf',
     },
     clearAllButton: {
       backgroundColor: '#FF3B30',
-      paddingVertical: 15,
-      paddingHorizontal: 20,
+      paddingVertical: isMobile ? 12 : 15,
+      paddingHorizontal: isMobile ? 15 : 20,
       borderRadius: 8,
       alignItems: 'center',
       borderWidth: 1,
       borderColor: '#FF3B30',
     },
     buttonText: {
-      color: '#ffffff',
-      fontSize: 16,
+      color: darkMode ? '#ffffff' : '#ffffff',
+      fontSize: isMobile ? 14 : 16,
       fontWeight: '600',
     },
-    buttonTextDisabled: {
-      color: darkMode ? '#666666' : '#999999',
+    dangerButtonText: {
+      color: '#ffffff',
     },
     imageGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 10,
+      gap: isMobile ? 8 : 10,
       marginTop: 10,
     },
     imageItem: {
-      width: (width - 100) / 6, // 6 images per row for even smaller previews
-      borderRadius: 8,
-      backgroundColor: darkMode ? '#333333' : '#f0f0f0',
+      width: getImageItemWidth(),
+      borderRadius: 0,
+      backgroundColor: darkMode ? '#000000' : '#ffffff',
       borderWidth: 1,
       borderColor: darkMode ? '#555555' : '#e0e0e0',
-      padding: 2,
+      padding: isMobile ? 1 : 2,
     },
           image: {
         width: 'auto',
         height: 'auto',
         maxWidth: '100%',
         maxHeight: '200px',
-        borderRadius: 6,
+        borderRadius: 0,
         objectFit: 'contain',
       },
     imageOverlay: {
@@ -676,28 +726,46 @@ const App = () => {
       alignItems: 'center',
     },
     imageButtons: {
-      flexDirection: 'row',
-      gap: 1,
-      marginTop: 5,
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: isMobile ? 2 : 1,
+      marginTop: isMobile ? 3 : 5,
     },
     imageButton: {
-      flex: 1,
-      paddingVertical: 3,
+      flex: isMobile ? 0 : 1,
+      paddingVertical: isMobile ? 2 : 3,
       alignItems: 'center',
       justifyContent: 'center',
     },
     convertButton: {
-      backgroundColor: '#34C759',
+      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
+      paddingHorizontal: isMobile ? 12 : 18,
+      paddingVertical: isMobile ? 3 : 4,
+      borderRadius: 0,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
     },
     cropButton: {
-      backgroundColor: '#007AFF',
+      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
+      paddingHorizontal: isMobile ? 12 : 18,
+      paddingVertical: isMobile ? 3 : 4,
+      borderRadius: 0,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
     },
     removeButton: {
       backgroundColor: '#FF3B30',
+      paddingHorizontal: isMobile ? 12 : 18,
+      paddingVertical: isMobile ? 3 : 4,
+      borderRadius: 0,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: '#FF3B30',
     },
     imageButtonText: {
-      color: '#ffffff',
-      fontSize: 15, // Adjusted to 15px for balanced readability
+      color: darkMode ? '#ffffff' : '#ffffff',
+      fontSize: isMobile ? 10 : 15, // Smaller text on mobile
       fontWeight: '500',
     },
     imageInfo: {
@@ -717,70 +785,90 @@ const App = () => {
       fontWeight: '500',
     },
     convertedItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: 20,
+      flexDirection: isMobile ? 'column' : 'row',
+      alignItems: isMobile ? 'flex-start' : 'center',
+      padding: isMobile ? 15 : 20,
       backgroundColor: darkMode ? '#1a1a1a' : '#f8f8f8',
-      borderRadius: 10,
-      marginBottom: 15,
+      borderRadius: isMobile ? 8 : 10,
+      marginBottom: isMobile ? 10 : 15,
       borderWidth: 1,
       borderColor: darkMode ? '#333333' : '#e0e0e0',
+      gap: isMobile ? 8 : 10,
     },
     convertedImage: {
       width: 'auto',
       height: 'auto',
-      maxWidth: '60px',
-      maxHeight: '60px',
-      borderRadius: 8,
-      marginRight: 15,
+      maxWidth: isMobile ? '60px' : '78px',
+      maxHeight: isMobile ? '60px' : '78px',
+      borderRadius: 0,
+      marginRight: isMobile ? 0 : 15,
       objectFit: 'contain',
     },
     convertedInfo: {
       flex: 1,
+      width: isMobile ? '100%' : 'auto',
     },
     convertedName: {
-      fontSize: 14,
+      fontSize: isMobile ? 12 : 14,
       fontWeight: '600',
       color: darkMode ? '#ffffff' : '#000000',
-      marginBottom: 5,
+      marginBottom: isMobile ? 3 : 5,
     },
     convertedSize: {
-      fontSize: 12,
+      fontSize: isMobile ? 14 : 16,
       color: darkMode ? '#ffffff' : '#000000',
       fontWeight: '500',
     },
     compressionInfo: {
-      fontSize: 10,
+      fontSize: isMobile ? 12 : 14,
       color: '#34C759',
-      marginTop: 3,
+      marginTop: isMobile ? 2 : 3,
       fontWeight: '600',
     },
     downloadButton: {
-      backgroundColor: '#007AFF',
-      paddingHorizontal: 18,
-      paddingVertical: 10,
+      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
+      paddingHorizontal: isMobile ? 18 : 22,
+      paddingVertical: isMobile ? 10 : 12,
       borderRadius: 8,
+      alignItems: 'center',
       borderWidth: 1,
-      borderColor: '#007AFF',
+      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
+      marginLeft: isMobile ? 0 : 8,
+      marginTop: isMobile ? 8 : 0,
     },
     downloadButtonText: {
+      color: darkMode ? '#ffffff' : '#ffffff',
+      fontSize: isMobile ? 12 : 14,
+      fontWeight: '600',
+    },
+    removeConvertedButton: {
+      backgroundColor: '#FF3B30',
+      paddingHorizontal: isMobile ? 18 : 22,
+      paddingVertical: isMobile ? 10 : 12,
+      borderRadius: 6,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: '#FF3B30',
+      marginLeft: isMobile ? 0 : 8,
+      marginTop: isMobile ? 8 : 0,
+    },
+    removeConvertedButtonText: {
       color: '#ffffff',
-      fontSize: 12,
+      fontSize: isMobile ? 12 : 14,
       fontWeight: '600',
     },
     downloadAllButton: {
-      backgroundColor: '#007AFF',
-      paddingHorizontal: 25,
-      paddingVertical: 12,
+      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
+      paddingVertical: isMobile ? 12 : 15,
+      paddingHorizontal: isMobile ? 18 : 20,
       borderRadius: 8,
-      marginTop: 15,
       alignItems: 'center',
       borderWidth: 1,
-      borderColor: '#007AFF',
+      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
     },
     downloadAllButtonText: {
-      color: '#ffffff',
-      fontSize: 14,
+      color: darkMode ? '#ffffff' : '#ffffff',
+      fontSize: isMobile ? 14 : 16,
       fontWeight: '600',
     },
     cropperOverlay: {
@@ -794,11 +882,11 @@ const App = () => {
     },
     emptyState: {
       alignItems: 'center',
-      padding: 50,
-      marginTop: 20,
+      padding: isMobile ? 30 : 50,
+      marginTop: isMobile ? 15 : 20,
     },
     emptyStateText: {
-      fontSize: 16,
+      fontSize: isMobile ? 14 : 16,
       color: darkMode ? '#ffffff' : '#000000',
       textAlign: 'center',
       fontWeight: '500',
@@ -807,6 +895,7 @@ const App = () => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      padding: isMobile ? 10 : 20,
     },
     loadingSpinner: {
       width: 20,
@@ -817,27 +906,28 @@ const App = () => {
       borderTopColor: 'transparent',
       marginRight: 10,
     },
-    sectionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 15,
-    },
-    sectionTitleWithCount: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: darkMode ? '#ffffff' : '#333333',
-    },
     clearConvertedButton: {
       backgroundColor: '#FF3B30',
-      paddingHorizontal: 12,
-      paddingVertical: 6,
+      paddingHorizontal: isMobile ? 18 : 22,
+      paddingVertical: isMobile ? 10 : 12,
       borderRadius: 6,
     },
     clearConvertedButtonText: {
       color: '#ffffff',
-      fontSize: 12,
-      fontWeight: '500',
+      fontSize: isMobile ? 12 : 14,
+      fontWeight: '600',
+    },
+    sectionHeader: {
+      flexDirection: isMobile ? 'column' : 'row',
+      justifyContent: 'space-between',
+      alignItems: isMobile ? 'flex-start' : 'center',
+      marginBottom: isMobile ? 15 : 20,
+      gap: isMobile ? 10 : 0,
+    },
+    sectionTitleWithCount: {
+      fontSize: isMobile ? 18 : isTablet ? 20 : 22,
+      fontWeight: '700',
+      color: darkMode ? '#ffffff' : '#000000',
     },
 
 
@@ -923,8 +1013,37 @@ const App = () => {
                   background: darkMode ? '#555555' : '#e0e0e0',
                   outline: 'none',
                   WebkitAppearance: 'none',
+                  cursor: 'pointer',
+                }}
+                onMouseDown={(e) => {
+                  e.target.style.background = darkMode ? '#777777' : '#cccccc';
+                }}
+                onMouseUp={(e) => {
+                  e.target.style.background = darkMode ? '#555555' : '#e0e0e0';
                 }}
               />
+              <style>{`
+                input[type="range"]::-webkit-slider-thumb {
+                  -webkit-appearance: none;
+                  appearance: none;
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 50%;
+                  background: ${darkMode ? '#2D2D2D' : '#000000'};
+                  cursor: pointer;
+                  border: 2px solid ${darkMode ? '#ffffff' : '#ffffff'};
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }
+                input[type="range"]::-moz-range-thumb {
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 50%;
+                  background: ${darkMode ? '#2D2D2D' : '#000000'};
+                  cursor: pointer;
+                  border: 2px solid ${darkMode ? '#ffffff' : '#ffffff'};
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }
+              `}</style>
             </View>
           </View>
 
@@ -933,10 +1052,10 @@ const App = () => {
               <TouchableOpacity
                 style={[
                   styles.convertAllButton,
-                  (isConverting || serverStatus !== 'connected') && styles.convertAllButtonDisabled
+                  (isConverting) && styles.convertAllButtonDisabled
                 ]}
                 onPress={convertAllImages}
-                disabled={isConverting || serverStatus !== 'connected'}
+                disabled={isConverting}
               >
                 {isConverting ? (
                   <View style={styles.loadingContainer}>
@@ -1039,6 +1158,12 @@ const App = () => {
                   onPress={() => downloadImage(image.url, image.name)}
                 >
                   <Text style={styles.downloadButtonText}>Download</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.removeConvertedButton}
+                  onPress={() => removeConvertedImage(index)}
+                >
+                  <Text style={styles.removeConvertedButtonText}>Remove</Text>
                 </TouchableOpacity>
               </View>
             ))}

@@ -1,5 +1,0 @@
-[33m05ca990[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Version_V2.1
-[33m190de07[m Fix cropper modal: revert to default ReactCrop handles for proper edge/corner dragging
-[33m197947e[m Add-confirmation-popup-for-Convert-All
-[33m2f42ee5[m Fix-cropping-functions-missing
-[33m32efce2[m Client-side-WebP-conversion-with-server-fallback

@@ -20,25 +20,15 @@ const BREAKPOINTS = {
   laptop: 1440,
 };
 
-// Responsive utilities
+// Responsive utilities - memoized to prevent recalculation
 const isMobile = width < BREAKPOINTS.mobile;
 const isTablet = width >= BREAKPOINTS.mobile && width < BREAKPOINTS.tablet;
 const isLaptop = width >= BREAKPOINTS.tablet && width < BREAKPOINTS.laptop;
 const isDesktop = width >= BREAKPOINTS.laptop;
 
-// Responsive grid calculations
-const getGridColumns = () => {
-  if (isMobile) return 2; // 2 columns on mobile
-  if (isTablet) return 4; // 4 columns on tablet
-  if (isLaptop) return 5; // 5 columns on laptop
-  return 6; // 6 columns on desktop
-};
-
-const getImageItemWidth = () => {
-  const columns = getGridColumns();
-  const padding = isMobile ? 40 : 100; // Less padding on mobile
-  return (width - padding) / columns;
-};
+// Responsive grid calculations - memoized
+const GRID_COLUMNS = isMobile ? 2 : isTablet ? 4 : isLaptop ? 5 : 6;
+const IMAGE_ITEM_WIDTH = (width - (isMobile ? 40 : 100)) / GRID_COLUMNS;
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
 
@@ -112,19 +102,135 @@ const convertFileToWebPClient = async (file, opts) => {
 
 const App = () => {
   const [images, setImages] = useState([]);
-  const [compressionLevel, setCompressionLevel] = useState(80);
+  const [compressionLevel, setCompressionLevel] = useState(95);
   const [isConverting, setIsConverting] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [convertedImages, setConvertedImages] = useState([]);
   const [serverStatus, setServerStatus] = useState('connected');
   const [convertingImages, setConvertingImages] = useState(new Set());
+  const [isDragOver, setIsDragOver] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const individualSpinAnim = useRef(new Animated.Value(0)).current;
 
   // Cropping state
   const [showCropper, setShowCropper] = useState(false);
   const [croppingImage, setCroppingImage] = useState(null);
 
 
+
+  // Update body class for theme
+  useEffect(() => {
+    if (darkMode) {
+      document.body.classList.add('dark-mode');
+    } else {
+      document.body.classList.remove('dark-mode');
+    }
+  }, [darkMode]);
+
+  // Spinning animation for loading spinner (Convert All button)
+  useEffect(() => {
+    let animationRef = null;
+    
+    if (isConverting) {
+      const runAnimation = () => {
+        spinAnim.setValue(0);
+        animationRef = Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        });
+        animationRef.start(({ finished }) => {
+          if (finished && isConverting) {
+            runAnimation(); // Restart the animation
+          }
+        });
+      };
+      runAnimation();
+    } else {
+      if (animationRef) {
+        animationRef.stop();
+      }
+      spinAnim.setValue(0);
+    }
+
+    return () => {
+      if (animationRef) {
+        animationRef.stop();
+      }
+    };
+  }, [isConverting, spinAnim]);
+
+  // Spinning animation for individual image spinners
+  useEffect(() => {
+    let individualAnimationRef = null;
+    
+    if (convertingImages.size > 0) {
+      const runIndividualAnimation = () => {
+        individualSpinAnim.setValue(0);
+        individualAnimationRef = Animated.timing(individualSpinAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        });
+        individualAnimationRef.start(({ finished }) => {
+          if (finished && convertingImages.size > 0) {
+            runIndividualAnimation(); // Restart the animation
+          }
+        });
+      };
+      runIndividualAnimation();
+    } else {
+      if (individualAnimationRef) {
+        individualAnimationRef.stop();
+      }
+      individualSpinAnim.setValue(0);
+    }
+
+    return () => {
+      if (individualAnimationRef) {
+        individualAnimationRef.stop();
+      }
+    };
+  }, [convertingImages.size, individualSpinAnim]);
+
+
+
+  // Global drag and drop handlers
+  useEffect(() => {
+    const handleGlobalDragOver = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.types.includes('Files')) {
+        setIsDragOver(true);
+      }
+    };
+
+    const handleGlobalDragLeave = (e) => {
+      e.preventDefault();
+      if (!e.relatedTarget || !e.relatedTarget.closest('[data-drag-zone]')) {
+        setIsDragOver(false);
+      }
+    };
+
+    const handleGlobalDrop = (e) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        handleFiles(files);
+      }
+    };
+
+    document.addEventListener('dragover', handleGlobalDragOver);
+    document.addEventListener('dragleave', handleGlobalDragLeave);
+    document.addEventListener('drop', handleGlobalDrop);
+
+    return () => {
+      document.removeEventListener('dragover', handleGlobalDragOver);
+      document.removeEventListener('dragleave', handleGlobalDragLeave);
+      document.removeEventListener('drop', handleGlobalDrop);
+    };
+  }, []);
 
   // Check server status on component mount (not required for client conversion, keep as non-blocking)
   React.useEffect(() => {
@@ -274,6 +380,9 @@ const App = () => {
     // Try client-side for each image; if unsupported and small, fallback per-file
     for (const image of images) {
       try {
+        // Add to converting set for individual loading state
+        setConvertingImages(prev => new Set(prev).add(image.id));
+        
         if (supportsWebP()) {
           const { blob, filename, originalSize, processedSize, compressionRatio } = await convertFileToWebPClient(image.file, {
             quality: compressionLevel
@@ -318,6 +427,9 @@ const App = () => {
         }
       } catch (e) {
         console.error('Batch item failed', image.name, e);
+      } finally {
+        // Remove from converting set
+        setConvertingImages(prev => { const s = new Set(prev); s.delete(image.id); return s; });
       }
     }
     return results;
@@ -326,30 +438,6 @@ const App = () => {
   // Convert all images
   const convertAllImages = async () => {
     if (images.length === 0) return;
-    
-    // Only show warning if there are already converted images
-    if (convertedImages.length > 0) {
-      // Web: use confirm (Alert buttons are not fully supported in RN Web)
-      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-        const ok = window.confirm('This will convert all uploaded images to WebP and clear the current list. Any previously converted images will be replaced. Continue?');
-        if (!ok) return;
-      } else {
-        // Native fallback: Alert with buttons
-        Alert.alert(
-          'Convert All Images',
-          'This will convert all uploaded images to WebP and clear the current list. Any previously converted images will be replaced. Continue?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Convert All', style: 'destructive', onPress: async () => {
-              await performConvertAll();
-            }}
-          ]
-        );
-        return;
-      }
-    }
-    
-    // If no converted images exist, proceed directly
     await performConvertAll();
   };
 
@@ -363,18 +451,40 @@ const App = () => {
     } catch (error) {
       console.error('Conversion error:', error);
       Alert.alert('Error', 'Failed to convert images. Please try again.');
+    } finally {
+      setIsConverting(false);
+      // Clear any remaining converting states
+      setConvertingImages(new Set());
     }
-    setIsConverting(false);
   };
 
   const clearAllImages = () => {
     images.forEach(image => URL.revokeObjectURL(image.url));
     setImages([]);
+    // Clear converting states when clearing images
+    setConvertingImages(new Set());
   };
 
   // Handle file selection
   const handleFileSelect = (event) => {
     const files = Array.from(event.target.files);
+    handleFiles(files);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
     handleFiles(files);
   };
 
@@ -595,7 +705,13 @@ const App = () => {
       marginBottom: isMobile ? 15 : 20,
       color: darkMode ? '#ffffff' : '#000000',
     },
+    uploadRow: {
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: isMobile ? 15 : 20,
+      marginBottom: 25,
+    },
     uploadZone: {
+      flex: isMobile ? 0 : 1,
       borderWidth: 2,
       borderStyle: 'dashed',
       borderColor: darkMode ? '#ffffff' : '#000000',
@@ -605,7 +721,6 @@ const App = () => {
       justifyContent: 'center',
       backgroundColor: darkMode ? '#0a0a0a' : '#f8f8f8',
       minHeight: 140,
-      marginBottom: 25,
     },
     uploadText: {
       fontSize: 18,
@@ -635,6 +750,43 @@ const App = () => {
       fontSize: 16,
       fontWeight: '600',
     },
+    dragDropZone: {
+      flex: isMobile ? 0 : 1,
+      borderWidth: 2,
+      borderStyle: 'dashed',
+      borderColor: darkMode ? '#ffffff' : '#000000',
+      borderRadius: isMobile ? 8 : 10,
+      padding: isMobile ? 20 : isTablet ? 25 : 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: darkMode ? '#0a0a0a' : '#f8f8f8',
+      minHeight: 140,
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    dragDropZoneActive: {
+      borderColor: darkMode ? '#34C759' : '#34C759',
+      backgroundColor: darkMode ? '#0d0d0d' : '#f0f0f0',
+      transform: [{ scale: 1 }],
+    },
+    dragDropText: {
+      fontSize: 18,
+      marginBottom: 5,
+      color: darkMode ? '#ffffff' : '#000000',
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    dragDropSubtext: {
+      fontSize: 12,
+      marginTop: 10,
+      color: darkMode ? '#cccccc' : '#666666',
+      fontWeight: '400',
+      textAlign: 'center',
+    },
+    dragDropIcon: {
+      fontSize: 32,
+      marginBottom: 10,
+    },
     sliderContainer: {
       marginBottom: 25,
       marginTop: 10,
@@ -662,6 +814,7 @@ const App = () => {
       gap: isMobile ? 10 : 15,
       marginBottom: isMobile ? 15 : 25,
       marginTop: 10,
+      alignItems: 'stretch',
     },
     convertAllButton: {
       flex: isMobile ? 0 : 1,
@@ -671,6 +824,7 @@ const App = () => {
       alignItems: 'center',
       borderWidth: 1,
       borderColor: darkMode ? '#2D2D2D' : '#ffffff',
+      minHeight: isMobile ? 44 : 48,
     },
     convertAllButtonDisabled: {
       backgroundColor: darkMode ? '#2a2a2a' : '#d9d9d9',
@@ -684,6 +838,7 @@ const App = () => {
       alignItems: 'center',
       borderWidth: 1,
       borderColor: '#FF3B30',
+      minHeight: isMobile ? 44 : 48,
     },
     buttonText: {
       color: darkMode ? '#ffffff' : '#ffffff',
@@ -700,7 +855,7 @@ const App = () => {
       marginTop: 10,
     },
     imageItem: {
-      width: getImageItemWidth(),
+      width: IMAGE_ITEM_WIDTH,
       borderRadius: 0,
       backgroundColor: darkMode ? '#000000' : '#ffffff',
       borderWidth: 1,
@@ -895,16 +1050,17 @@ const App = () => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: isMobile ? 10 : 20,
+      paddingHorizontal: 8,
+      paddingVertical: 0,
     },
     loadingSpinner: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
+      width: 16,
+      height: 16,
+      borderRadius: 8,
       borderWidth: 2,
       borderColor: '#ffffff',
       borderTopColor: 'transparent',
-      marginRight: 10,
+      marginRight: 8,
     },
     clearConvertedButton: {
       backgroundColor: '#FF3B30',
@@ -967,29 +1123,42 @@ const App = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Upload Images</Text>
           
-          <TouchableOpacity
-            style={styles.uploadZone}
-            onPress={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.multiple = true;
-              input.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp,image/tiff,image/bmp';
-              input.onchange = (event) => handleFileSelect(event);
-              input.click();
-            }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const files = Array.from(e.dataTransfer.files);
-              handleFiles(files);
-            }}
-          >
-            <Text style={styles.uploadText}>📁 Select Images from your device</Text>
-            <Text style={styles.uploadSubtext}>Supports: JPEG, PNG, GIF, WebP, TIFF, BMP</Text>
-            <View style={styles.selectButton}>
-              <Text style={styles.selectButtonText}>Browse Files</Text>
+          <View style={styles.uploadRow}>
+            {/* Select Files Button */}
+            <TouchableOpacity
+              style={styles.uploadZone}
+              onPress={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp,image/tiff,image/bmp';
+                input.onchange = (event) => handleFileSelect(event);
+                input.click();
+              }}
+            >
+              <Text style={styles.uploadText}>📁 Select Images from your device</Text>
+              <Text style={styles.uploadSubtext}>Supports: JPEG, PNG, GIF, WebP, TIFF, BMP</Text>
+              <View style={styles.selectButton}>
+                <Text style={styles.selectButtonText}>Browse Files</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Drag and Drop Zone */}
+            <View
+              data-drag-zone="true"
+              style={[
+                styles.dragDropZone,
+                isDragOver && styles.dragDropZoneActive
+              ]}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <Text style={styles.dragDropIcon}>📤</Text>
+              <Text style={styles.dragDropText}>Drag & Drop Images Here</Text>
+              <Text style={styles.dragDropSubtext}>Drop your images directly here</Text>
             </View>
-          </TouchableOpacity>
+          </View>
 
           <View style={styles.sliderContainer}>
             <Text style={styles.sliderLabel}>
@@ -1059,11 +1228,23 @@ const App = () => {
               >
                 {isConverting ? (
                   <View style={styles.loadingContainer}>
-                    <View style={styles.loadingSpinner} />
+                    <Animated.View 
+                      style={[
+                        styles.loadingSpinner,
+                        {
+                          transform: [{
+                            rotate: spinAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['0deg', '360deg']
+                            })
+                          }]
+                        }
+                      ]} 
+                    />
                     <Text style={styles.buttonText}>Converting All...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.buttonText}>Convert All ({images.length}) - Clears Previous</Text>
+                  <Text style={styles.buttonText}>Convert All ({images.length})</Text>
                 )}
               </TouchableOpacity>
               
@@ -1088,7 +1269,19 @@ const App = () => {
                   {/* Loading overlay */}
                   {convertingImages.has(image.id) && (
                     <View style={styles.imageOverlay}>
-                      <View style={styles.loadingSpinner} />
+                      <Animated.View 
+                        style={[
+                          styles.loadingSpinner,
+                          {
+                            transform: [{
+                              rotate: individualSpinAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['0deg', '360deg']
+                              })
+                            }]
+                          }
+                        ]} 
+                      />
                     </View>
                   )}
                   

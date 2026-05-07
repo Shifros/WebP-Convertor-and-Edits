@@ -1,5 +1,5 @@
 <<<<<<< HEAD
-# Navyas Playground - WebP Converter
+# Playground - WebP Converter
 
 A modern WebP converter built with React Native Web and Sharp backend, featuring advanced image cropping and resizing capabilities.
 

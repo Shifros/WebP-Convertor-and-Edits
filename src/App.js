@@ -1151,9 +1151,9 @@ export default function App() {
               href="https://shifros.com"
               target="_blank"
               rel="noreferrer"
-              aria-label="Shifros home"
+              aria-label="Shifros Studio home"
             >
-              <img src="/brand/shifros-reversed.svg" alt="Shifros" width="1332" height="400" />
+              <img src="/brand/shifros-studio-reversed.svg" alt="Shifros Studio" />
             </a>
             <span className="footer-brand-rule" />
             <span>

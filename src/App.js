@@ -159,47 +159,24 @@ function Mascot() {
   );
 }
 
-function Faq({ onClose: done }) {
-  const ref = useRef(null);
-  const onClose = useAnimatedClose(ref, done);
-  const backdrop = useBackdropClose(ref, () => onClose());
-  useEffect(() => {
-    const previous = document.activeElement;
-    ref.current.showModal();
-    return () => previous?.focus();
-  }, []);
+function FaqSection() {
   return (
-    <dialog
-      ref={ref}
-      className="help faq-dialog"
-      aria-labelledby="faq-title"
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
-      {...backdrop}
-    >
-      <header className="dialog-head">
-        <div>
-          <span className="eyebrow">FAQ</span>
-          <h2 id="faq-title">Common questions</h2>
+    <section className="faq-section" id="faq" aria-labelledby="faq-title">
+      <div className="faq-inner">
+        <h2 id="faq-title">Frequently asked questions</h2>
+        <div className="faq-list">
+          {site.faq.map((item) => (
+            <details key={item.q}>
+              <summary>
+                {item.q}
+                <Icon name="chevron" size={16} />
+              </summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
         </div>
-        <button className="icon-button" aria-label="Close" onClick={onClose}>
-          <Icon name="close" />
-        </button>
-      </header>
-      <div className="faq-list">
-        {site.faq.map((item) => (
-          <details key={item.q}>
-            <summary>
-              {item.q}
-              <Icon name="chevron" size={16} />
-            </summary>
-            <p>{item.a}</p>
-          </details>
-        ))}
       </div>
-    </dialog>
+    </section>
   );
 }
 
@@ -299,7 +276,6 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [help, setHelp] = useState(false);
   const [agentGuide, setAgentGuide] = useState(false);
-  const [faq, setFaq] = useState(false);
   const input = useRef(null);
   const urls = useRef(new Set());
   const itemsRef = useRef(items);
@@ -1165,6 +1141,8 @@ export default function App() {
         </aside>
       </main>
 
+      <FaqSection />
+
       <footer className="app-footer">
         <div className="footer-inner">
           <div className="footer-brand">
@@ -1172,9 +1150,9 @@ export default function App() {
               href="https://shifros.com"
               target="_blank"
               rel="noreferrer"
-              aria-label="Shifros Studio home"
+              aria-label="Shifros home"
             >
-              <img src="/brand/shifros-studio-reversed.svg" alt="Shifros Studio" />
+              <img src="/brand/shifros-reversed.svg" alt="Shifros" width="1332" height="400" />
             </a>
             <span className="footer-brand-rule" />
             <span>
@@ -1188,10 +1166,10 @@ export default function App() {
               How it works
               <Icon name="arrow" size={14} />
             </button>
-            <button onClick={() => setFaq(true)}>
+            <a href="#faq">
               FAQ
               <Icon name="arrow" size={14} />
-            </button>
+            </a>
             <a href="https://shifros.com" target="_blank" rel="noreferrer">
               shifros.com
               <Icon name="external" size={13} />
@@ -1246,7 +1224,6 @@ export default function App() {
         />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
-      {faq && <Faq onClose={() => setFaq(false)} />}
       {agentGuide && <AgentGuide onClose={() => setAgentGuide(false)} />}
     </div>
   );

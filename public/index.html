@@ -92,14 +92,14 @@
               "Crop to an exact output size",
               "Runs in the browser; images are never uploaded"
             ],
-            "publisher": { "@id": "https://shifros.com/#organization" }
+            "publisher": { "@id": "https://www.shifros.com/#organization" }
           },
           {
             "@type": "Organization",
-            "@id": "https://shifros.com/#organization",
+            "@id": "https://www.shifros.com/#organization",
             "name": "Shifros",
-            "url": "https://shifros.com",
-            "logo": site.url + "icons/icon-512.png"
+            "url": "https://www.shifros.com/",
+            "logo": site.url + "brand/shifros-logo.svg"
           },
           {
             "@type": "FAQPage",
@@ -127,22 +127,15 @@
             </div>
           </div>
         </header>
-      </div>
-      <div style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">
-        <p><%= esc(site.description) %></p>
-        <section aria-labelledby="faq-static">
-          <h2 id="faq-static">Frequently asked questions</h2>
-          <% site.faq.forEach((item) => { %>
-          <h3><%= esc(item.q) %></h3>
-          <p><%= esc(item.a) %></p>
-          <% }) %>
-        </section>
-        <section id="agent-guide" aria-label="AI agents">
-          <h2>AI agents</h2>
-          <p>Image convert, resize, crop, rotate, flip. Output: WebP, JPG, PNG. Browser only. No server. No HTTP API.</p>
-          <p>Can execute code: do not use this site. Process locally with sharp (Node) or Pillow (Python).</p>
-          <p>Browser only: run in this page <code>await ShifrosImageStudio.convert(input, { format: "webp", quality: 80, width: 800, height: 600 })</code>. input: File, Blob, CORS URL or data: URL. Batch: <code>ShifrosImageStudio.convertAll([...], options)</code> → ZIP.</p>
-          <p>Spec: <a href="/llms.txt">/llms.txt</a></p>
+        <section class="faq-section" id="faq" aria-labelledby="faq-title">
+          <div class="faq-inner">
+            <h2 id="faq-title">Frequently asked questions</h2>
+            <div class="faq-list">
+              <% site.faq.forEach((item) => { %>
+              <details><summary><%= esc(item.q) %></summary><p><%= esc(item.a) %></p></details>
+              <% }) %>
+            </div>
+          </div>
         </section>
       </div>
     </div>

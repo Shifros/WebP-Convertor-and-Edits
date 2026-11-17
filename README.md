@@ -37,7 +37,7 @@ npm run build    # static site in dist/
 ## Search and agents
 
 - `src/site.json`: title, description, canonical URL and FAQ. Used by the page, the meta tags and the JSON-LD.
-- `public/index.html`: meta tags, Open Graph, Twitter card, JSON-LD (WebApplication, Organization, FAQPage) and crawlable fallback content.
+- `public/index.html`: meta tags, Open Graph, Twitter card, JSON-LD (WebApplication, Organization, FAQPage) and the pre-rendered header and FAQ.
 - `sitemap.xml`: generated at build time.
 - `robots.txt`, `llms.txt`, `og-image.jpg`, `favicon.ico`, `icons/`: copied from `public/` at build time.
 - `window.ShifrosImageStudio`: in-page API for browser agents. Spec in `public/llms.txt`.

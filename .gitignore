@@ -35,9 +35,8 @@ coverage/
 # Optional npm cache directory
 .npm
 
-# Build outputs (keep dist committed for Vercel troubleshooting)
-# build/
-# dist/
+# Build output
+dist/
 
 # Misc
 .vercel

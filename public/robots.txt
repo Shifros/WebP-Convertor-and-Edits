@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://webp.shifros.com/sitemap.xml
+
+# Agent spec: https://webp.shifros.com/llms.txt

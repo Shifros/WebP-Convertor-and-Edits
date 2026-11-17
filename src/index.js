@@ -1,7 +1,8 @@
-import { AppRegistry } from 'react-native';
-import App from './App';
+import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+import "./styles.css";
+import { installAgentApi } from "./agent-api";
 
-AppRegistry.registerComponent('WebPConverter', () => App);
-AppRegistry.runApplication('WebPConverter', {
-  rootTag: document.getElementById('root')
-});
+installAgentApi();
+createRoot(document.getElementById("root")).render(<App />);

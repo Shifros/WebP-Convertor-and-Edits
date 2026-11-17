@@ -1,53 +1,43 @@
 {
-  "name": "webp-converter",
-  "version": "1.0.0",
-  "description": "WebP Edit and Converter - A powerful image editing and WebP conversion tool",
-  "main": "index.js",
+  "name": "shifros-image-studio",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Convert images to WebP, JPG or PNG, then resize, crop and compress them in the browser.",
+  "homepage": "https://webp.shifros.com",
+  "author": "Shifros",
+  "license": "MIT",
+  "keywords": [
+    "webp",
+    "image-converter",
+    "resize",
+    "crop",
+    "compress",
+    "browser"
+  ],
   "scripts": {
     "start": "webpack serve --mode development --open",
     "build": "webpack --mode production",
     "dev": "webpack serve --mode development",
-    "server": "node server.js",
-    "dev:server": "nodemon server.js",
-    "dev:full": "concurrently \"npm run dev\" \"npm run dev:server\"",
-    "start:full": "concurrently \"npm run dev\" \"npm run server\"",
     "vercel-build": "npm run build"
   },
-  "keywords": [
-    "react-native-web",
-    "webp",
-    "converter",
-    "image",
-    "sharp",
-    "nodejs"
-  ],
-  "author": "",
-  "license": "MIT",
   "engines": {
-    "node": "20.x"
+    "node": ">=20"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "formidable": "^3.5.1",
     "jszip": "^3.10.1",
-    "multer": "^1.4.5-lts.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "react-image-crop": "^11.0.10",
-    "react-native": "^0.72.0",
-    "react-native-web": "^0.19.0",
-    "sharp": "^0.32.6"
+    "react-image-crop": "^11.0.10"
   },
   "devDependencies": {
     "@babel/core": "^7.22.0",
     "@babel/preset-env": "^7.22.0",
     "@babel/preset-react": "^7.22.0",
     "babel-loader": "^9.1.0",
-    "concurrently": "^8.2.2",
     "css-loader": "^7.1.2",
+    "css-minimizer-webpack-plugin": "^8.0.0",
     "html-webpack-plugin": "^5.5.0",
-    "nodemon": "^3.1.10",
+    "mini-css-extract-plugin": "^2.10.2",
     "style-loader": "^4.0.0",
     "webpack": "^5.88.0",
     "webpack-cli": "^5.1.0",

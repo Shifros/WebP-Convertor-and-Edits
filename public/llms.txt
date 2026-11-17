@@ -3,6 +3,13 @@
 Image conversion, resize, crop, rotate, flip. Output: WebP, JPG, PNG.
 Browser only. No server. No HTTP API. Files never leave the device.
 
+## Links
+
+- [Image Studio](https://webp.shifros.com/): the app
+- [Agent spec](https://webp.shifros.com/llms.txt): this file
+- [Sitemap](https://webp.shifros.com/sitemap.xml)
+- [Shifros](https://www.shifros.com/): publisher
+
 ## Choose a path
 
 A. You can execute code (shell, Node, Python): do not use this site. Process locally.

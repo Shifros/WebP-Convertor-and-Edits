@@ -133,11 +133,8 @@ function AgentGuide({ onClose: done }) {
 
 function Mascot() {
   return (
-    <svg className="mascot" viewBox="0 0 120 120" aria-hidden="true">
-      <ellipse className="shadow" cx="60" cy="108" rx="26" ry="4" fill="currentColor" opacity=".14" />
-      <g className="bob">
-        <rect x="40" y="94" width="11" height="10" rx="4" fill="currentColor" />
-        <rect x="69" y="94" width="11" height="10" rx="4" fill="currentColor" />
+    <svg className="mascot" viewBox="18 16 84 84" aria-hidden="true">
+      <g>
         <rect x="20" y="18" width="80" height="80" rx="16" fill="#00D68F" />
         <clipPath id="mascot-screen">
           <rect x="29" y="27" width="62" height="62" rx="9" />

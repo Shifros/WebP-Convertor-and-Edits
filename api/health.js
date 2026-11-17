@@ -1,9 +1,0 @@
-module.exports = (req, res) => {
-	res.setHeader('Access-Control-Allow-Origin', '*');
-	res.status(200).json({
-		status: 'OK',
-		message: 'WebP Converter API is running',
-		timestamp: new Date().toISOString(),
-		environment: process.env.NODE_ENV || 'development'
-	});
-};

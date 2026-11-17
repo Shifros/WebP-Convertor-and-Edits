@@ -1,1405 +1,1253 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Icon from "./Icon";
+import ImageEditor from "./ImageEditor";
+import site from "./site.json";
+import { segment, useAnimatedClose, useBackdropClose, withViewTransition } from "./motion";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  StyleSheet,
-  Dimensions,
-  Animated
-} from 'react-native';
-import ImageCropper from './ImageCropper';
+  MAX_FILES,
+  MAX_BYTES,
+  MAX_PIXELS,
+  MAX_SIDE,
+  effective,
+  formatBytes,
+  loadImage,
+  exportImage,
+  makeThumb,
+  getOutputDimensions,
+  uniqueFilename,
+  download,
+  extension,
+} from "./image-tools";
 
-const { width } = Dimensions.get('window');
-
-// Responsive breakpoints
-const BREAKPOINTS = {
-  mobile: 768,
-  tablet: 1024,
-  laptop: 1440,
+const defaults = {
+  format: "webp",
+  quality: 85,
+  resize: false,
+  width: "",
+  height: "",
+  locked: true,
+  upscale: false,
+  suffix: "",
+};
+/** Batch settings from a link, e.g. ?format=webp&quality=80&width=1200 */
+const readPresets = () => {
+  const settings = { ...defaults };
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const format = (params.get("format") || "").toLowerCase();
+    const map = { webp: "webp", jpg: "jpeg", jpeg: "jpeg", png: "png" };
+    if (map[format]) settings.format = map[format];
+    const quality = Math.round(Number(params.get("quality")));
+    if (quality >= 1 && quality <= 100) settings.quality = quality;
+    const side = (key) => {
+      const value = Math.round(Number(params.get(key)));
+      return value >= 1 && value <= MAX_SIDE ? String(value) : "";
+    };
+    settings.width = side("width");
+    settings.height = side("height");
+    settings.resize = !!(settings.width || settings.height);
+    const suffix = params.get("suffix");
+    if (suffix) settings.suffix = suffix.replace(/[\\/:*?"<>|\x00-\x1f]/g, "").slice(0, 40);
+  } catch {}
+  return settings;
 };
 
-// Responsive utilities - memoized to prevent recalculation
-const isMobile = width < BREAKPOINTS.mobile;
-const isTablet = width >= BREAKPOINTS.mobile && width < BREAKPOINTS.tablet;
-const isLaptop = width >= BREAKPOINTS.tablet && width < BREAKPOINTS.laptop;
-const isDesktop = width >= BREAKPOINTS.laptop;
+export const AGENT_SNIPPET = `await ShifrosImageStudio.convert(input, {
+  format: "webp",          // webp | jpg | png
+  quality: 80,             // 1-100
+  width: 800, height: 600,
+  fit: "cover",            // cover | contain | fill
+});
+// input: File | Blob | CORS URL | data: URL
 
-// Responsive grid calculations - memoized
-const GRID_COLUMNS = isMobile ? 2 : isTablet ? 4 : isLaptop ? 5 : 6;
-const IMAGE_ITEM_WIDTH = (width - (isMobile ? 40 : 100)) / GRID_COLUMNS;
+await ShifrosImageStudio.convertAll([a, b], { format: "webp" });  // ZIP`;
 
-const API_BASE_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
+function AgentGuide({ onClose: done }) {
+  const ref = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const onClose = useAnimatedClose(ref, done);
+  const backdrop = useBackdropClose(ref, () => onClose());
+  useEffect(() => {
+    const previous = document.activeElement;
+    ref.current.showModal();
+    return () => previous?.focus();
+  }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(AGENT_SNIPPET);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {}
+  };
+  return (
+    <dialog
+      ref={ref}
+      className="help agent-guide"
+      aria-labelledby="agent-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      {...backdrop}
+    >
+      <header className="dialog-head">
+        <div>
+          <span className="eyebrow">AI agents</span>
+          <h2 id="agent-title">Agent usage</h2>
+        </div>
+        <button className="icon-button" aria-label="Close" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </header>
+      <ul className="agent-rules">
+        <li>
+          <strong>No server. No HTTP API.</strong> Files stay on the device.
+        </li>
+        <li>
+          <strong>Can execute code:</strong> process locally with sharp (Node)
+          or Pillow (Python).
+        </li>
+        <li>
+          <strong>Browser only:</strong> run in this page:
+        </li>
+      </ul>
+      <div className="agent-code">
+        <pre>
+          <code>{AGENT_SNIPPET}</code>
+        </pre>
+        <button className="text-button" onClick={copy}>
+          <Icon name={copied ? "check" : "file"} size={14} />
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p className="help-note">
+        <Icon name="file" size={16} />
+        <span>
+          Spec: <a href="/llms.txt" target="_blank" rel="noreferrer">/llms.txt</a>.
+          Presets: <code>?format=webp&amp;quality=80&amp;width=1200</code>
+        </span>
+      </p>
+    </dialog>
+  );
+}
 
-// --- Client-side WebP support and conversion helpers ---
-const supportsWebP = () => {
+function Mascot() {
+  return (
+    <svg className="mascot" viewBox="0 0 120 120" aria-hidden="true">
+      <ellipse className="shadow" cx="60" cy="108" rx="26" ry="4" fill="currentColor" opacity=".14" />
+      <g className="bob">
+        <rect x="40" y="94" width="11" height="10" rx="4" fill="currentColor" />
+        <rect x="69" y="94" width="11" height="10" rx="4" fill="currentColor" />
+        <rect x="20" y="18" width="80" height="80" rx="16" fill="#00D68F" />
+        <clipPath id="mascot-screen">
+          <rect x="29" y="27" width="62" height="62" rx="9" />
+        </clipPath>
+        <g clipPath="url(#mascot-screen)">
+          <rect x="29" y="27" width="62" height="62" fill="#E8FFF4" />
+          <path d="M29 80 48 63l11 10 10-8 22 17v7H29Z" fill="#00A870" />
+          <circle cx="79" cy="39" r="5" fill="#C6F135" />
+        </g>
+        <g className="blink">
+          <circle cx="49" cy="49" r="4.2" fill="#0B0B0F" />
+          <circle cx="71" cy="49" r="4.2" fill="#0B0B0F" />
+        </g>
+        <circle cx="42" cy="58" r="3.4" fill="#FF9DB8" opacity=".7" />
+        <circle cx="78" cy="58" r="3.4" fill="#FF9DB8" opacity=".7" />
+        <path d="M55 57q5 5 10 0" fill="none" stroke="#0B0B0F" strokeWidth="2.6" strokeLinecap="round" />
+      </g>
+    </svg>
+  );
+}
+
+function Faq({ onClose: done }) {
+  const ref = useRef(null);
+  const onClose = useAnimatedClose(ref, done);
+  const backdrop = useBackdropClose(ref, () => onClose());
+  useEffect(() => {
+    const previous = document.activeElement;
+    ref.current.showModal();
+    return () => previous?.focus();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="help faq-dialog"
+      aria-labelledby="faq-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      {...backdrop}
+    >
+      <header className="dialog-head">
+        <div>
+          <span className="eyebrow">FAQ</span>
+          <h2 id="faq-title">Common questions</h2>
+        </div>
+        <button className="icon-button" aria-label="Close" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </header>
+      <div className="faq-list">
+        {site.faq.map((item) => (
+          <details key={item.q}>
+            <summary>
+              {item.q}
+              <Icon name="chevron" size={16} />
+            </summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </dialog>
+  );
+}
+
+const ACCEPT =".jpg,.jpeg,.png,.webp,.gif,.svg,.bmp,.avif";
+const isImage = (file) =>
+  /\.(jpe?g|png|webp|gif|svg|bmp|avif)$/i.test(file.name);
+const THEMES = ["system", "light", "dark"];
+const getThemePreference = () => {
   try {
-    const canvas = document.createElement('canvas');
-    return canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+    const saved = localStorage.getItem("shifros-theme-preference");
+    return THEMES.includes(saved) ? saved : "system";
   } catch {
-    return false;
+    return "system";
   }
 };
 
-const readImageFromFile = (file) => new Promise((resolve, reject) => {
-  const img = new Image();
-  img.onload = () => resolve(img);
-  img.onerror = reject;
-  img.src = URL.createObjectURL(file);
-});
-
-const drawToCanvas = (img, opts) => {
-  const {
-    resizeWidth,
-    resizeHeight,
-    cropLeft,
-    cropTop,
-    cropWidth,
-    cropHeight,
-    imageSmoothingQuality = 'high'
-  } = opts || {};
-
-  const sx = cropLeft != null ? parseInt(cropLeft, 10) : 0;
-  const sy = cropTop != null ? parseInt(cropTop, 10) : 0;
-  const sWidth = cropWidth != null ? parseInt(cropWidth, 10) : img.naturalWidth;
-  const sHeight = cropHeight != null ? parseInt(cropHeight, 10) : img.naturalHeight;
-
-  const dWidth = resizeWidth ? parseInt(resizeWidth, 10) : sWidth;
-  const dHeight = resizeHeight ? parseInt(resizeHeight, 10) : sHeight;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = dWidth;
-  canvas.height = dHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = imageSmoothingQuality;
-  ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, dWidth, dHeight);
-  return canvas;
-};
-
-const convertFileToWebPClient = async (file, opts) => {
-  const qualityPercent = Math.max(1, Math.min(100, parseInt(opts?.quality ?? 80, 10)));
-  const quality = Math.max(0.05, Math.min(1, qualityPercent / 100));
-
-  const img = await readImageFromFile(file);
-  const canvas = drawToCanvas(img, opts);
-
-  const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob((b) => {
-      if (!b) return reject(new Error('Browser failed to produce WebP blob'));
-      resolve(b);
-    }, 'image/webp', quality);
-  });
-
-  const originalSize = file.size;
-  const processedSize = blob.size;
-  const compressionRatio = originalSize > 0 ? Math.round(((originalSize - processedSize) / originalSize) * 100) : 0;
-  const filename = (file.name || 'image').replace(/\.[^/.]+$/, '') + '.webp';
-
-  return { blob, filename, originalSize, processedSize, compressionRatio };
-};
-
-const App = () => {
-  const [images, setImages] = useState([]);
-  const [compressionLevel, setCompressionLevel] = useState(95);
-  const [isConverting, setIsConverting] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
-  const [convertedImages, setConvertedImages] = useState([]);
-  const [serverStatus, setServerStatus] = useState('connected');
-  const [convertingImages, setConvertingImages] = useState(new Set());
-  const [isDragOver, setIsDragOver] = useState(false);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const spinAnim = useRef(new Animated.Value(0)).current;
-  const individualSpinAnim = useRef(new Animated.Value(0)).current;
-
-  // Cropping state
-  const [showCropper, setShowCropper] = useState(false);
-  const [croppingImage, setCroppingImage] = useState(null);
-
-
-
-  // Update body class for theme
+function Help({ onClose: done }) {
+  const ref = useRef(null);
+  const onClose = useAnimatedClose(ref, done);
+  const backdrop = useBackdropClose(ref, () => onClose());
   useEffect(() => {
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
-  }, [darkMode]);
-
-  // Spinning animation for loading spinner (Convert All button)
-  useEffect(() => {
-    let animationRef = null;
-    
-    if (isConverting) {
-      const runAnimation = () => {
-        spinAnim.setValue(0);
-        animationRef = Animated.timing(spinAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        });
-        animationRef.start(({ finished }) => {
-          if (finished && isConverting) {
-            runAnimation(); // Restart the animation
-          }
-        });
-      };
-      runAnimation();
-    } else {
-      if (animationRef) {
-        animationRef.stop();
-      }
-      spinAnim.setValue(0);
-    }
-
-    return () => {
-      if (animationRef) {
-        animationRef.stop();
-      }
-    };
-  }, [isConverting, spinAnim]);
-
-  // Spinning animation for individual image spinners
-  useEffect(() => {
-    let individualAnimationRef = null;
-    
-    if (convertingImages.size > 0) {
-      const runIndividualAnimation = () => {
-        individualSpinAnim.setValue(0);
-        individualAnimationRef = Animated.timing(individualSpinAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        });
-        individualAnimationRef.start(({ finished }) => {
-          if (finished && convertingImages.size > 0) {
-            runIndividualAnimation(); // Restart the animation
-          }
-        });
-      };
-      runIndividualAnimation();
-    } else {
-      if (individualAnimationRef) {
-        individualAnimationRef.stop();
-      }
-      individualSpinAnim.setValue(0);
-    }
-
-    return () => {
-      if (individualAnimationRef) {
-        individualAnimationRef.stop();
-      }
-    };
-  }, [convertingImages.size, individualSpinAnim]);
-
-
-
-  // Global drag and drop handlers
-  useEffect(() => {
-    const handleGlobalDragOver = (e) => {
-      e.preventDefault();
-      if (e.dataTransfer.types.includes('Files')) {
-        setIsDragOver(true);
-      }
-    };
-
-    const handleGlobalDragLeave = (e) => {
-      e.preventDefault();
-      if (!e.relatedTarget || !e.relatedTarget.closest('[data-drag-zone]')) {
-        setIsDragOver(false);
-      }
-    };
-
-    const handleGlobalDrop = (e) => {
-      e.preventDefault();
-      setIsDragOver(false);
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0) {
-        handleFiles(files);
-      }
-    };
-
-    document.addEventListener('dragover', handleGlobalDragOver);
-    document.addEventListener('dragleave', handleGlobalDragLeave);
-    document.addEventListener('drop', handleGlobalDrop);
-
-    return () => {
-      document.removeEventListener('dragover', handleGlobalDragOver);
-      document.removeEventListener('dragleave', handleGlobalDragLeave);
-      document.removeEventListener('drop', handleGlobalDrop);
-    };
+    const previous = document.activeElement;
+    ref.current.showModal();
+    return () => previous?.focus();
   }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="help"
+      aria-labelledby="help-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      {...backdrop}
+    >
+      <header className="dialog-head">
+        <div>
+          <span className="eyebrow">How it works</span>
+          <h2 id="help-title">From image to ready.</h2>
+        </div>
+        <button className="icon-button" aria-label="Close help" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </header>
+      <ol className="help-steps">
+        <li>
+          <strong>Add images.</strong>
+          <p>
+            Drop up to 20 files, choose them, or paste from your clipboard.
+            Each can be up to 50 MB.
+          </p>
+        </li>
+        <li>
+          <strong>Set the batch.</strong>
+          <p>Pick a format, quality and an optional maximum size for everything.</p>
+        </li>
+        <li>
+          <strong>Fine-tune any image.</strong>
+          <p>
+            Press Edit on a card to give that image its own format, quality,
+            exact size, crop area, rotation and flip. Type 500 × 600 and the
+            crop box takes that shape. Move it to choose the area.
+          </p>
+        </li>
+        <li>
+          <strong>Download.</strong>
+          <p>
+            Download one image from its card, or everything as a ZIP.
+          </p>
+        </li>
+      </ol>
+      <p className="help-note">
+        <Icon name="shield" size={16} />
+        Images never leave your device. Animated images export as a still
+        frame, and JPG uses a white background for transparency.
+      </p>
+    </dialog>
+  );
+}
 
-  // Check server status on component mount (not required for client conversion, keep as non-blocking)
-  React.useEffect(() => {
-    const checkServerStatus = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/health`);
-        if (response.ok) setServerStatus('connected');
-        else setServerStatus('error');
-      } catch {
-        setServerStatus('error');
-      }
-    };
-    checkServerStatus();
-    const interval = setInterval(checkServerStatus, 15000);
-    return () => clearInterval(interval);
-  }, []);
+export default function App() {
+  const [items, setItems] = useState([]);
+  const [settings, setSettings] = useState(readPresets);
+  const [themePreference, setThemePreference] = useState(getThemePreference);
+  const [systemTheme, setSystemTheme] = useState(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light",
+  );
+  const theme = themePreference === "system" ? systemTheme : themePreference;
+  const [view, setView] = useState("grid");
+  const [dragging, setDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [working, setWorking] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [help, setHelp] = useState(false);
+  const [agentGuide, setAgentGuide] = useState(false);
+  const [faq, setFaq] = useState(false);
+  const input = useRef(null);
+  const urls = useRef(new Set());
+  const itemsRef = useRef(items);
+  const settingsRef = useRef(settings);
+  const busyRef = useRef(false);
+  const dragDepth = useRef(0);
+  itemsRef.current = items;
+  settingsRef.current = settings;
 
-  // Pulse animation for server status
-  useEffect(() => {
-    if (serverStatus === 'connected') {
-      const pulseAnimation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.3,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      pulseAnimation.start();
-      return () => pulseAnimation.stop();
+  const remember = (url) => {
+    urls.current.add(url);
+    return url;
+  };
+  const release = (url) => {
+    if (url) {
+      URL.revokeObjectURL(url);
+      urls.current.delete(url);
     }
-  }, [serverStatus, pulseAnim]);
-
-  const handleFiles = (files) => {
-    const newImages = files.map(file => ({
-      file,
-      url: URL.createObjectURL(file),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      id: Date.now() + Math.random()
-    }));
-    setImages(prev => [...prev, ...newImages]);
   };
-
-  const removeImage = (imageId) => {
-    setImages(prev => {
-      const newImages = prev.filter(img => img.id !== imageId);
-      const removedImage = prev.find(img => img.id === imageId);
-      if (removedImage) URL.revokeObjectURL(removedImage.url);
-      return newImages;
-    });
-  };
-
-  // Convert single image (client-first)
-  const convertSingleImage = async (image) => {
-    setConvertingImages(prev => new Set(prev).add(image.id));
-
+  useEffect(() => () => urls.current.forEach(URL.revokeObjectURL), []);
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemTheme(preference.matches ? "dark" : "light");
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.__mesh?.(theme);
+  }, [theme]);
+  useEffect(() => {
     try {
-      // Client-side path
-      if (supportsWebP()) {
-        const { blob, filename, originalSize, processedSize, compressionRatio } = await convertFileToWebPClient(image.file, {
-          quality: compressionLevel
-        });
-        const webPUrl = URL.createObjectURL(blob);
-        const convertedImage = {
-          url: webPUrl,
-          name: filename,
-          size: processedSize,
-          originalName: image.name,
-          originalSize,
-          compressionRatio
-        };
-        setConvertedImages(prev => [...prev, convertedImage]);
-        Alert.alert(
-          'Conversion Successful!',
-          `${image.name} has been converted to WebP format.\n\nOriginal: ${formatFileSize(originalSize)}\nConverted: ${formatFileSize(processedSize)}\nCompression: ${compressionRatio}% smaller`,
-          [{ text: 'OK', style: 'default' }]
+      localStorage.setItem("shifros-theme-preference", themePreference);
+    } catch {}
+  }, [themePreference]);
+  useEffect(() => {
+    if (!notice || notice.type === "error") return;
+    const timer = setTimeout(() => setNotice(null), 4500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  const addFiles = useCallback(async (files) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setLoading(true);
+    setNotice(null);
+    const accepted = [];
+    const errors = [];
+    let count = itemsRef.current.length;
+    for (const file of Array.from(files)) {
+      if (count >= MAX_FILES) {
+        errors.push(
+          `The workspace holds up to ${MAX_FILES} images. Remove a few to add more.`,
         );
-        return;
+        break;
       }
-
-      // Fallback: small files via server
-      if (image.size <= 4 * 1024 * 1024) {
-        const formData = new FormData();
-        formData.append('image', image.file);
-        formData.append('quality', compressionLevel);
-        formData.append('effort', 4);
-        const response = await fetch(`${API_BASE_URL}/api/convert`, { method: 'POST', body: formData });
-        if (!response.ok) {
-          let errMsg = `HTTP ${response.status}`;
-          try { const e = await response.json(); if (e?.error) errMsg = e.error; } catch {}
-          throw new Error(errMsg);
-        }
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const result = await response.json();
-          if (result?.success && result?.data) {
-            const webPBlob = new Blob([Uint8Array.from(atob(result.data), c => c.charCodeAt(0))], { type: 'image/webp' });
-            const webPUrl = URL.createObjectURL(webPBlob);
-            const convertedImage = {
-              url: webPUrl,
-              name: result.filename || (image.name?.replace(/\.[^/.]+$/, '') + '.webp'),
-              size: result.processedSize,
-              originalName: image.name,
-              originalSize: result.originalSize,
-              compressionRatio: result.compressionRatio
-            };
-            setConvertedImages(prev => [...prev, convertedImage]);
-            return;
-          }
-          throw new Error('Unexpected API response');
-        } else {
-          const webPBlob = await response.blob();
-          const webPUrl = URL.createObjectURL(webPBlob);
-          const convertedImage = {
-            url: webPUrl,
-            name: image.name?.replace(/\.[^/.]+$/, '') + '.webp',
-            size: webPBlob.size,
-            originalName: image.name,
-            originalSize: image.size,
-            compressionRatio: image.size ? Math.round(((image.size - webPBlob.size) / image.size) * 100) : undefined
-          };
-          setConvertedImages(prev => [...prev, convertedImage]);
-          return;
-        }
+      if (!isImage(file)) {
+        errors.push(`${file.name}: choose JPG, PNG, WebP, GIF, SVG, BMP or AVIF.`);
+        continue;
       }
-
-      throw new Error('Your browser cannot convert to WebP locally and the image is too large for server fallback.');
-    } catch (error) {
-      console.error(`Error converting ${image.name}:`, error);
-      Alert.alert('Error', `Failed to convert ${image.name}: ${error.message}`);
-    } finally {
-      setConvertingImages(prev => { const s = new Set(prev); s.delete(image.id); return s; });
-    }
-  };
-
-  // Convert batch images (client-first)
-  const convertBatchImages = async (images) => {
-    const results = [];
-    // Try client-side for each image; if unsupported and small, fallback per-file
-    for (const image of images) {
+      if (file.size > MAX_BYTES) {
+        errors.push(`${file.name} exceeds the 50 MB limit.`);
+        continue;
+      }
+      if (
+        itemsRef.current
+          .concat(accepted)
+          .some(
+            (item) =>
+              item.name === file.name &&
+              item.size === file.size &&
+              item.modified === file.lastModified,
+          )
+      )
+        continue;
+      const url = remember(URL.createObjectURL(file));
       try {
-        // Add to converting set for individual loading state
-        setConvertingImages(prev => new Set(prev).add(image.id));
-        
-        if (supportsWebP()) {
-          const { blob, filename, originalSize, processedSize, compressionRatio } = await convertFileToWebPClient(image.file, {
-            quality: compressionLevel
-          });
-          const webPUrl = URL.createObjectURL(blob);
-          results.push({
-            url: webPUrl,
-            name: filename,
-            size: processedSize,
-            originalName: image.name,
-            originalSize,
-            compressionRatio
-          });
-        } else if (image.size <= 4 * 1024 * 1024) {
-          const formData = new FormData();
-          formData.append('images', image.file);
-          formData.append('quality', compressionLevel);
-          formData.append('effort', 4);
-          const response = await fetch(`${API_BASE_URL}/api/convert-multiple`, { method: 'POST', body: formData });
-          if (!response.ok) {
-            let errMsg = `HTTP ${response.status}`;
-            try { const e = await response.json(); if (e?.error) errMsg = e.error; } catch {}
-            throw new Error(errMsg);
-          }
-          const result = await response.json();
-          if (result?.success && Array.isArray(result.results)) {
-            result.results.filter(r => r.success && r.data).forEach(item => {
-              const webPBlob = new Blob([Uint8Array.from(atob(item.data), c => c.charCodeAt(0))], { type: 'image/webp' });
-              const webPUrl = URL.createObjectURL(webPBlob);
-              results.push({
-                url: webPUrl,
-                name: item.filename,
-                size: item.processedSize,
-                originalName: item.originalName,
-                originalSize: item.originalSize,
-                compressionRatio: item.compressionRatio
-              });
-            });
-          }
-        } else {
-          throw new Error('Large image cannot be uploaded to server; use a modern browser for local conversion.');
-        }
-      } catch (e) {
-        console.error('Batch item failed', image.name, e);
-      } finally {
-        // Remove from converting set
-        setConvertingImages(prev => { const s = new Set(prev); s.delete(image.id); return s; });
+        const decoded = await loadImage(url);
+        const { naturalWidth: w, naturalHeight: h } = decoded;
+        if (!w || !h || w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS)
+          throw new Error(
+            "Image exceeds the 64 megapixel or 16,384 pixel per-side limit.",
+          );
+        accepted.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          size: file.size,
+          modified: file.lastModified,
+          url,
+          thumb: null,
+          width: w,
+          height: h,
+          rotation: 0,
+          flipped: false,
+          crop: null,
+          out: null,
+          format: null,
+          quality: null,
+          result: null,
+          error: null,
+        });
+        count++;
+      } catch (error) {
+        release(url);
+        errors.push(`${file.name}: ${error.message}`);
       }
     }
-    return results;
+    setItems((current) => [...current, ...accepted]);
+    if (errors.length)
+      setNotice({ type: "error", text: [...new Set(errors)].join(" ") });
+    setLoading(false);
+    busyRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
+    const over = (e) => hasFiles(e) && e.preventDefault();
+    const enter = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current++;
+      setDragging(true);
+    };
+    const leave = (e) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current--;
+      if (dragDepth.current <= 0) {
+        dragDepth.current = 0;
+        setDragging(false);
+      }
+    };
+    const drop = (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      if (!document.querySelector("dialog[open]")) addFiles(e.dataTransfer.files);
+    };
+    const paste = (e) => {
+      if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+      const files = Array.from(e.clipboardData?.files || []);
+      if (files.length) {
+        e.preventDefault();
+        addFiles(files);
+      }
+    };
+    const key = (e) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "o" &&
+        !document.querySelector("dialog[open]")
+      ) {
+        e.preventDefault();
+        if (!busyRef.current) input.current.click();
+      }
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    window.addEventListener("paste", paste);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+      window.removeEventListener("paste", paste);
+      window.removeEventListener("keydown", key);
+    };
+  }, [addFiles]);
+
+  const clearResults = (list) => {
+    list.forEach((item) => release(item.result?.url));
+    return list.map((item) => ({ ...item, result: null, error: null }));
+  };
+  const updateSettings = (patch) => {
+    setSettings((current) => ({ ...current, ...patch }));
+    setItems(clearResults);
+    setNotice(null);
+  };
+  const [leaving, setLeaving] = useState(() => new Set());
+  const remove = (id) => {
+    setLeaving((current) => new Set(current).add(id));
+    setTimeout(() => {
+      setLeaving((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      removeNow(id);
+    }, 220);
+  };
+  const removeNow = (id) =>
+    setItems((current) =>
+      current.filter((item) => {
+        if (item.id !== id) return true;
+        release(item.url);
+        release(item.thumb);
+        release(item.result?.url);
+        return false;
+      }),
+    );
+  const clear = () => {
+    setLeaving(new Set(items.map((item) => item.id)));
+    setTimeout(clearNow, 220);
+  };
+  const clearNow = () => {
+    setLeaving(new Set());
+    itemsRef.current.forEach((item) => {
+      release(item.url);
+      release(item.thumb);
+      release(item.result?.url);
+    });
+    setItems([]);
+    setNotice(null);
   };
 
-  // Convert all images
-  const convertAllImages = async () => {
-    if (images.length === 0) return;
-    await performConvertAll();
+  const results = items.filter((item) => item.result);
+  const pending = items.filter((item) => !item.result);
+  const inputBytes = items.reduce((total, item) => total + item.size, 0);
+  const originalBytes = results.reduce((total, item) => total + item.size, 0);
+  const outputBytes = results.reduce(
+    (total, item) => total + item.result.blob.size,
+    0,
+  );
+  const savings = originalBytes
+    ? Math.round((1 - outputBytes / originalBytes) * 100)
+    : 0;
+  const sizeInvalid =
+    settings.resize &&
+    [settings.width, settings.height].some(
+      (value) =>
+        value !== "" &&
+        (!Number.isInteger(Number(value)) ||
+          Number(value) < 1 ||
+          Number(value) > MAX_SIDE),
+    );
+  const busy = working !== null || loading;
+
+  const storeResult = (id, result) => {
+    remember(result.url);
+    setItems((current) =>
+      current.map((value) => {
+        if (value.id !== id) return value;
+        release(value.result?.url);
+        return { ...value, result, error: null };
+      }),
+    );
+  };
+  const storeError = (id, error) =>
+    setItems((current) =>
+      current.map((value) =>
+        value.id === id ? { ...value, error: error.message } : value,
+      ),
+    );
+
+  /** Export the given images that have no result yet. Returns every result. */
+  const exportMany = async (list, label) => {
+    const done = new Map(list.filter((i) => i.result).map((i) => [i.id, i.result]));
+    const todo = list.filter((i) => !i.result);
+    for (let index = 0; index < todo.length; index++) {
+      setWorking({ label, index: index + 1, total: todo.length });
+      try {
+        const result = await exportImage(todo[index], settingsRef.current);
+        storeResult(todo[index].id, result);
+        done.set(todo[index].id, result);
+      } catch (error) {
+        storeError(todo[index].id, error);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return done;
   };
 
-  // Helper function to perform the actual conversion
-  const performConvertAll = async () => {
-    setIsConverting(true);
+  const downloadOne = async (item) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setNotice(null);
     try {
-      const batchResults = await convertBatchImages(images);
-      setConvertedImages(prev => [...prev, ...batchResults]);
-      clearAllImages();
-    } catch (error) {
-      console.error('Conversion error:', error);
-      Alert.alert('Error', 'Failed to convert images. Please try again.');
+      const done = await exportMany([item], "Preparing");
+      const result = done.get(item.id);
+      if (result) download(result.url, result.filename);
+      else
+        setNotice({
+          type: "error",
+          text: `${item.name} could not be exported. Check the message on its card.`,
+        });
     } finally {
-      setIsConverting(false);
-      // Clear any remaining converting states
-      setConvertingImages(new Set());
+      setWorking(null);
+      busyRef.current = false;
     }
   };
 
-  const clearAllImages = () => {
-    images.forEach(image => URL.revokeObjectURL(image.url));
-    setImages([]);
-    // Clear converting states when clearing images
-    setConvertingImages(new Set());
-  };
-
-  // Handle file selection
-  const handleFileSelect = (event) => {
-    const files = Array.from(event.target.files);
-    handleFiles(files);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    handleFiles(files);
-  };
-
-  // Open cropper for an image
-  const openCropper = (image) => {
-    setCroppingImage(image);
-    setShowCropper(true);
-  };
-
-  // Handle crop completion
-  const handleCropComplete = async (cropData) => {
-    if (!cropData || !cropData.blob) {
-      Alert.alert('Error', 'Failed to crop image');
-      return;
-    }
-
-    try {
-      // Convert blob to file
-      const croppedFile = new File([cropData.blob], croppingImage.name, {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
-
-      // Create new image object with cropped file
-      const croppedImage = {
-        ...croppingImage,
-        file: croppedFile,
-        url: URL.createObjectURL(cropData.blob),
-        name: croppingImage.name.replace(/\.[^/.]+$/, '') + '_cropped.jpg',
-        size: croppedFile.size,
-        type: 'image/jpeg'
-      };
-
-      // Replace the original image with the cropped one
-      setImages(prev => prev.map(img => 
-        img.id === croppingImage.id ? croppedImage : img
-      ));
-
-      setShowCropper(false);
-      setCroppingImage(null);
-
-    } catch (error) {
-      console.error('Error handling crop:', error);
-      Alert.alert('Error', 'Failed to process cropped image');
-    }
-  };
-
-  // Clear all converted images
-  const clearAllConverted = () => {
-    convertedImages.forEach(image => URL.revokeObjectURL(image.url));
-    setConvertedImages([]);
-  };
-
-  // Remove individual converted image
-  const removeConvertedImage = (index) => {
-    const imageToRemove = convertedImages[index];
-    URL.revokeObjectURL(imageToRemove.url);
-    setConvertedImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Download individual image
-  const downloadImage = (url, name) => {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  // Download all converted images as ZIP
   const downloadAll = async () => {
-    if (convertedImages.length === 0) return;
-    
+    if (busyRef.current || !items.length || sizeInvalid) return;
+    busyRef.current = true;
+    setNotice(null);
     try {
-      // For single file, just download it
-      if (convertedImages.length === 1) {
-        downloadImage(convertedImages[0].url, convertedImages[0].name);
-        return;
+      const done = await exportMany(itemsRef.current, "Exporting");
+      const ready = itemsRef.current.filter((item) => done.has(item.id));
+      if (ready.length === 1) {
+        const result = done.get(ready[0].id);
+        download(result.url, result.filename);
+      } else if (ready.length > 1) {
+        setWorking({ label: "Zipping", index: 0, total: 0 });
+        const JSZip = (await import("jszip")).default;
+        const zip = new JSZip();
+        const used = new Set();
+        ready.forEach((item) => {
+          const result = done.get(item.id);
+          zip.file(uniqueFilename(result.filename, used), result.blob);
+        });
+        const blob = await zip.generateAsync({ type: "blob" });
+        const url = remember(URL.createObjectURL(blob));
+        download(url, "shifros-images.zip");
+        setTimeout(() => release(url), 10000);
       }
-      
-      // For multiple files, create a ZIP
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      
-      for (const image of convertedImages) {
-        const response = await fetch(image.url);
-        const blob = await response.blob();
-        zip.file(image.name, blob);
-      }
-      
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const zipUrl = URL.createObjectURL(zipBlob);
-      
-      const a = document.createElement('a');
-      a.href = zipUrl;
-      a.download = 'webp-converted-images.zip';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      URL.revokeObjectURL(zipUrl);
-    } catch (error) {
-      console.error('Error creating ZIP:', error);
-      Alert.alert('Error', 'Failed to create ZIP file. Downloading files individually.');
-      
-      // Fallback to individual downloads
-      convertedImages.forEach(image => {
-        setTimeout(() => downloadImage(image.url, image.name), 100);
+      const failed = itemsRef.current.length - ready.length;
+      setNotice(
+        failed
+          ? {
+              type: "error",
+              text: `${failed} image${failed === 1 ? "" : "s"} could not be exported. Check the message on ${failed === 1 ? "its" : "their"} card.`,
+            }
+          : {
+              type: "success",
+              text: ready.length === 1 ? "Your image is ready." : `${ready.length} images saved as a ZIP.`,
+            },
+      );
+    } catch {
+      setNotice({
+        type: "error",
+        text: "Could not create the ZIP. You can still download each image from its card.",
       });
+    } finally {
+      setWorking(null);
+      busyRef.current = false;
     }
   };
 
-  // Format file size
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const saveEdit = async (id, patch, andDownload) => {
+    const current = itemsRef.current.find((item) => item.id === id);
+    const merged = { ...current, ...patch, result: null, error: null };
+    let thumb = null;
+    try {
+      thumb = remember(await makeThumb(merged));
+    } catch {}
+    release(current.thumb);
+    release(current.result?.url);
+    setItems((list) =>
+      list.map((item) => (item.id === id ? { ...merged, thumb } : item)),
+    );
+    setEditId(null);
+    if (andDownload) await downloadOne({ ...merged, thumb });
   };
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: darkMode ? '#000000' : '#ffffff',
-      padding: isMobile ? 20 : isTablet ? 40 : 60,
-      paddingTop: 0,
-      paddingBottom: isMobile ? 60 : 90,
-    },
-    header: {
-      flexDirection: isMobile ? 'column' : 'row',
-      justifyContent: isMobile ? 'flex-start' : 'space-between',
-      alignItems: isMobile ? 'flex-start' : 'center',
-      marginBottom: isMobile ? 20 : 40,
-      paddingHorizontal: isMobile ? 5 : 10,
-      marginTop: isMobile ? 20 : 60,
-      gap: isMobile ? 15 : 0,
-    },
-    titleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: isMobile ? 10 : 15,
-      flexWrap: isMobile ? 'wrap' : 'nowrap',
-    },
-    title: {
-      fontSize: isMobile ? 24 : isTablet ? 28 : 32,
-      fontWeight: 'bold',
-      color: darkMode ? '#ffffff' : '#000000',
-    },
-    headerRight: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: isMobile ? 10 : 15,
-      flexWrap: isMobile ? 'wrap' : 'nowrap',
-    },
-    serverStatusInline: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    themeButton: {
-      padding: 12,
-      paddingHorizontal: 20,
-      borderRadius: 8,
-      backgroundColor: darkMode ? '#333333' : '#e0e0e0',
-      borderWidth: 1,
-      borderColor: darkMode ? '#ffffff' : '#000000',
-    },
-    themeButtonText: {
-      color: darkMode ? '#ffffff' : '#000000',
-      fontSize: 14,
-      fontWeight: '600',
-    },
-
-    statusIndicator: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      marginRight: 8,
-    },
-    statusIndicatorConnected: {
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      marginRight: 8,
-      backgroundColor: '#34C759',
-      shadowColor: '#34C759',
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.8,
-      shadowRadius: 4,
-      elevation: 4,
-    },
-    statusText: {
-      fontSize: 14,
-      color: darkMode ? '#ffffff' : '#000000',
-      fontWeight: '500',
-    },
-    content: {
-      flex: 1,
-    },
-    section: {
-      backgroundColor: darkMode ? '#1a1a1a' : '#ffffff',
-      borderRadius: isMobile ? 10 : 15,
-      padding: isMobile ? 15 : isTablet ? 20 : 25,
-      marginBottom: isMobile ? 15 : 25,
-      marginHorizontal: isMobile ? 2 : 5,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: darkMode ? 0.3 : 0.1,
-      shadowRadius: 8,
-      elevation: 5,
-      borderWidth: 1,
-      borderColor: darkMode ? '#333333' : '#e0e0e0',
-    },
-    sectionTitle: {
-      fontSize: isMobile ? 18 : isTablet ? 20 : 22,
-      fontWeight: '700',
-      marginBottom: isMobile ? 15 : 20,
-      color: darkMode ? '#ffffff' : '#000000',
-    },
-    uploadRow: {
-      flexDirection: isMobile ? 'column' : 'row',
-      gap: isMobile ? 15 : 20,
-      marginBottom: 25,
-    },
-    uploadZone: {
-      flex: isMobile ? 0 : 1,
-      borderWidth: 2,
-      borderStyle: 'dashed',
-      borderColor: darkMode ? '#ffffff' : '#000000',
-      borderRadius: isMobile ? 8 : 10,
-      padding: isMobile ? 20 : isTablet ? 25 : 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: darkMode ? '#0a0a0a' : '#f8f8f8',
-      minHeight: 140,
-    },
-    uploadText: {
-      fontSize: 18,
-      marginBottom: 5,
-      color: darkMode ? '#ffffff' : '#000000',
-      fontWeight: '600',
-      textAlign: 'center',
-    },
-    uploadSubtext: {
-      fontSize: 12,
-      marginTop: 10,
-      color: darkMode ? '#cccccc' : '#666666',
-      fontWeight: '400',
-      textAlign: 'center',
-    },
-    selectButton: {
-      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
-      paddingHorizontal: 25,
-      paddingVertical: 12,
-      borderRadius: 8,
-      marginTop: 15,
-      borderWidth: 1,
-      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
-    },
-    selectButtonText: {
-      color: darkMode ? '#ffffff' : '#ffffff',
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    dragDropZone: {
-      flex: isMobile ? 0 : 1,
-      borderWidth: 2,
-      borderStyle: 'dashed',
-      borderColor: darkMode ? '#ffffff' : '#000000',
-      borderRadius: isMobile ? 8 : 10,
-      padding: isMobile ? 20 : isTablet ? 25 : 30,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: darkMode ? '#0a0a0a' : '#f8f8f8',
-      minHeight: 140,
-      position: 'relative',
-      overflow: 'hidden',
-    },
-    dragDropZoneActive: {
-      borderColor: darkMode ? '#34C759' : '#34C759',
-      backgroundColor: darkMode ? '#0d0d0d' : '#f0f0f0',
-      transform: [{ scale: 1 }],
-    },
-    dragDropText: {
-      fontSize: 18,
-      marginBottom: 5,
-      color: darkMode ? '#ffffff' : '#000000',
-      fontWeight: '600',
-      textAlign: 'center',
-    },
-    dragDropSubtext: {
-      fontSize: 12,
-      marginTop: 10,
-      color: darkMode ? '#cccccc' : '#666666',
-      fontWeight: '400',
-      textAlign: 'center',
-    },
-    dragDropIcon: {
-      fontSize: 32,
-      marginBottom: 10,
-    },
-    sliderContainer: {
-      marginBottom: 25,
-      marginTop: 10,
-    },
-    sliderLabel: {
-      fontSize: 16,
-      fontWeight: '600',
-      marginBottom: 15,
-      color: darkMode ? '#ffffff' : '#000000',
-    },
-    slider: {
-      width: '100%',
-      height: 40,
-    },
-    sliderText: {
-      fontSize: 12,
-      color: darkMode ? '#ffffff' : '#000000',
-      textAlign: 'center',
-      marginTop: 0,
-      marginBottom: 10,
-      fontWeight: '500',
-    },
-    buttonRow: {
-      flexDirection: isMobile ? 'column' : 'row',
-      gap: isMobile ? 10 : 15,
-      marginBottom: isMobile ? 15 : 25,
-      marginTop: 10,
-      alignItems: 'stretch',
-    },
-    convertAllButton: {
-      flex: isMobile ? 0 : 1,
-      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
-      paddingVertical: isMobile ? 12 : 15,
-      borderRadius: 8,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
-      minHeight: isMobile ? 44 : 48,
-    },
-    convertAllButtonDisabled: {
-      backgroundColor: darkMode ? '#2a2a2a' : '#d9d9d9',
-      borderColor: darkMode ? '#3a3a3a' : '#bfbfbf',
-    },
-    clearAllButton: {
-      backgroundColor: '#FF3B30',
-      paddingVertical: isMobile ? 12 : 15,
-      paddingHorizontal: isMobile ? 15 : 20,
-      borderRadius: 8,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: '#FF3B30',
-      minHeight: isMobile ? 44 : 48,
-    },
-    buttonText: {
-      color: darkMode ? '#ffffff' : '#ffffff',
-      fontSize: isMobile ? 14 : 16,
-      fontWeight: '600',
-    },
-    dangerButtonText: {
-      color: '#ffffff',
-    },
-    imageGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: isMobile ? 8 : 10,
-      marginTop: 10,
-    },
-    imageItem: {
-      width: IMAGE_ITEM_WIDTH,
-      borderRadius: 0,
-      backgroundColor: darkMode ? '#000000' : '#ffffff',
-      borderWidth: 1,
-      borderColor: darkMode ? '#555555' : '#e0e0e0',
-      padding: isMobile ? 1 : 2,
-    },
-          image: {
-        width: 'auto',
-        height: 'auto',
-        maxWidth: '100%',
-        maxHeight: '200px',
-        borderRadius: 0,
-        objectFit: 'contain',
-      },
-    imageOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.3)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    imageButtons: {
-      flexDirection: isMobile ? 'column' : 'row',
-      gap: isMobile ? 2 : 1,
-      marginTop: isMobile ? 3 : 5,
-    },
-    imageButton: {
-      flex: isMobile ? 0 : 1,
-      paddingVertical: isMobile ? 2 : 3,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    convertButton: {
-      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
-      paddingHorizontal: isMobile ? 12 : 18,
-      paddingVertical: isMobile ? 3 : 4,
-      borderRadius: 0,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
-    },
-    cropButton: {
-      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
-      paddingHorizontal: isMobile ? 12 : 18,
-      paddingVertical: isMobile ? 3 : 4,
-      borderRadius: 0,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
-    },
-    removeButton: {
-      backgroundColor: '#FF3B30',
-      paddingHorizontal: isMobile ? 12 : 18,
-      paddingVertical: isMobile ? 3 : 4,
-      borderRadius: 0,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: '#FF3B30',
-    },
-    imageButtonText: {
-      color: darkMode ? '#ffffff' : '#ffffff',
-      fontSize: isMobile ? 10 : 15, // Smaller text on mobile
-      fontWeight: '500',
-    },
-    imageInfo: {
-      padding: 3,
-    },
-    imageName: {
-      fontSize: 7,
-      color: darkMode ? '#ffffff' : '#000000',
-      marginBottom: 2,
-      textAlign: 'center',
-      fontWeight: '500',
-    },
-    imageSize: {
-      fontSize: 6,
-      color: darkMode ? '#ffffff' : '#000000',
-      textAlign: 'center',
-      fontWeight: '500',
-    },
-    convertedItem: {
-      flexDirection: isMobile ? 'column' : 'row',
-      alignItems: isMobile ? 'flex-start' : 'center',
-      padding: isMobile ? 15 : 20,
-      backgroundColor: darkMode ? '#1a1a1a' : '#f8f8f8',
-      borderRadius: isMobile ? 8 : 10,
-      marginBottom: isMobile ? 10 : 15,
-      borderWidth: 1,
-      borderColor: darkMode ? '#333333' : '#e0e0e0',
-      gap: isMobile ? 8 : 10,
-    },
-    convertedImage: {
-      width: 'auto',
-      height: 'auto',
-      maxWidth: isMobile ? '60px' : '78px',
-      maxHeight: isMobile ? '60px' : '78px',
-      borderRadius: 0,
-      marginRight: isMobile ? 0 : 15,
-      objectFit: 'contain',
-    },
-    convertedInfo: {
-      flex: 1,
-      width: isMobile ? '100%' : 'auto',
-    },
-    convertedName: {
-      fontSize: isMobile ? 12 : 14,
-      fontWeight: '600',
-      color: darkMode ? '#ffffff' : '#000000',
-      marginBottom: isMobile ? 3 : 5,
-    },
-    convertedSize: {
-      fontSize: isMobile ? 14 : 16,
-      color: darkMode ? '#ffffff' : '#000000',
-      fontWeight: '500',
-    },
-    compressionInfo: {
-      fontSize: isMobile ? 12 : 14,
-      color: '#34C759',
-      marginTop: isMobile ? 2 : 3,
-      fontWeight: '600',
-    },
-    downloadButton: {
-      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
-      paddingHorizontal: isMobile ? 18 : 22,
-      paddingVertical: isMobile ? 10 : 12,
-      borderRadius: 8,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
-      marginLeft: isMobile ? 0 : 8,
-      marginTop: isMobile ? 8 : 0,
-    },
-    downloadButtonText: {
-      color: darkMode ? '#ffffff' : '#ffffff',
-      fontSize: isMobile ? 12 : 14,
-      fontWeight: '600',
-    },
-    removeConvertedButton: {
-      backgroundColor: '#FF3B30',
-      paddingHorizontal: isMobile ? 18 : 22,
-      paddingVertical: isMobile ? 10 : 12,
-      borderRadius: 6,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: '#FF3B30',
-      marginLeft: isMobile ? 0 : 8,
-      marginTop: isMobile ? 8 : 0,
-    },
-    removeConvertedButtonText: {
-      color: '#ffffff',
-      fontSize: isMobile ? 12 : 14,
-      fontWeight: '600',
-    },
-    downloadAllButton: {
-      backgroundColor: darkMode ? '#2D2D2D' : '#000000',
-      paddingVertical: isMobile ? 12 : 15,
-      paddingHorizontal: isMobile ? 18 : 20,
-      borderRadius: 8,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: darkMode ? '#2D2D2D' : '#ffffff',
-    },
-    downloadAllButtonText: {
-      color: darkMode ? '#ffffff' : '#ffffff',
-      fontSize: isMobile ? 14 : 16,
-      fontWeight: '600',
-    },
-    cropperOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.9)',
-      zIndex: 9999,
-    },
-    emptyState: {
-      alignItems: 'center',
-      padding: isMobile ? 30 : 50,
-      marginTop: isMobile ? 15 : 20,
-    },
-    emptyStateText: {
-      fontSize: isMobile ? 14 : 16,
-      color: darkMode ? '#ffffff' : '#000000',
-      textAlign: 'center',
-      fontWeight: '500',
-    },
-    loadingContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 8,
-      paddingVertical: 0,
-    },
-    loadingSpinner: {
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      borderWidth: 2,
-      borderColor: '#ffffff',
-      borderTopColor: 'transparent',
-      marginRight: 8,
-    },
-    clearConvertedButton: {
-      backgroundColor: '#FF3B30',
-      paddingHorizontal: isMobile ? 18 : 22,
-      paddingVertical: isMobile ? 10 : 12,
-      borderRadius: 6,
-    },
-    clearConvertedButtonText: {
-      color: '#ffffff',
-      fontSize: isMobile ? 12 : 14,
-      fontWeight: '600',
-    },
-    sectionHeader: {
-      flexDirection: isMobile ? 'column' : 'row',
-      justifyContent: 'space-between',
-      alignItems: isMobile ? 'flex-start' : 'center',
-      marginBottom: isMobile ? 15 : 20,
-      gap: isMobile ? 10 : 0,
-    },
-    sectionTitleWithCount: {
-      fontSize: isMobile ? 18 : isTablet ? 20 : 22,
-      fontWeight: '700',
-      color: darkMode ? '#ffffff' : '#000000',
-    },
-
-
-  });
+  const editing = items.find((item) => item.id === editId);
+  const empty = !items.length;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>WebP Edit and Converter</Text>
-        <View style={styles.headerRight}>
-          <View style={styles.serverStatusInline}>
-            <Animated.View style={[
-              serverStatus === 'connected' ? styles.statusIndicatorConnected : styles.statusIndicator,
-              {
-                backgroundColor: serverStatus === 'connected' ? '#34C759' : 
-                               serverStatus === 'checking' ? '#FF9500' : '#FF3B30',
-                transform: [{ scale: pulseAnim }],
-              }
-            ]} />
-            <Text style={styles.statusText}>
-              {serverStatus === 'connected' ? 'Server Connected' :
-               serverStatus === 'checking' ? 'Checking Server...' : 'Server Disconnected'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.themeButton}
-            onPress={() => setDarkMode(!darkMode)}
+    <div className="app">
+      <header className="app-header">
+        <div className="header-inner">
+          <a
+            className="brand"
+            href="https://shifros.com"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Shifros home"
           >
-            <Text style={styles.themeButtonText}>
-              {darkMode ? 'Light Mode' : 'Dark Mode'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upload Images</Text>
-          
-          <View style={styles.uploadRow}>
-            {/* Select Files Button */}
-            <TouchableOpacity
-              style={styles.uploadZone}
-              onPress={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.multiple = true;
-                input.accept = 'image/jpeg,image/jpg,image/png,image/gif,image/webp,image/tiff,image/bmp';
-                input.onchange = (event) => handleFileSelect(event);
-                input.click();
-              }}
+            <img src="/icons/icon.svg" alt="Shifros" width="1024" height="1024" />
+          </a>
+          <span className="header-divider" />
+          <div className="tool-name">
+            <div className="tool-title">
+              <h1>Image Studio</h1>
+              <span className="tool-badge">TOOL 01</span>
+            </div>
+            <small>BY SHIFROS</small>
+          </div>
+          <div className="header-actions">
+            <span className="local-status">
+              <i /> All on your device
+            </span>
+            <button
+              className="agent-chip"
+              aria-label="Guide for AI agents"
+              title="Guide for AI agents"
+              onClick={() => setAgentGuide(true)}
             >
-              <Text style={styles.uploadText}>📁 Select Images from your device</Text>
-              <Text style={styles.uploadSubtext}>Supports: JPEG, PNG, GIF, WebP, TIFF, BMP</Text>
-              <View style={styles.selectButton}>
-                <Text style={styles.selectButtonText}>Browse Files</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Drag and Drop Zone */}
-            <View
-              data-drag-zone="true"
-              style={[
-                styles.dragDropZone,
-                isDragOver && styles.dragDropZoneActive
-              ]}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
+              AI agent?
+            </button>
+            <button
+              className="icon-button"
+              aria-label="How it works"
+              title="How it works"
+              onClick={() => setHelp(true)}
             >
-              <Text style={styles.dragDropIcon}>📤</Text>
-              <Text style={styles.dragDropText}>Drag & Drop Images Here</Text>
-              <Text style={styles.dragDropSubtext}>Drop your images directly here</Text>
-            </View>
-          </View>
-
-          <View style={styles.sliderContainer}>
-            <Text style={styles.sliderLabel}>
-              Compression Level: {compressionLevel}%
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={styles.sliderText}>Smaller File</Text>
-              <Text style={styles.sliderText}>Better Quality</Text>
-            </View>
-            <View style={styles.slider}>
-              <input
-                type="range"
-                min="1"
-                max="100"
-                value={compressionLevel}
-                onChange={(e) => setCompressionLevel(parseInt(e.target.value))}
-                style={{
-                  width: '100%',
-                  height: 6,
-                  borderRadius: 3,
-                  background: darkMode ? '#555555' : '#e0e0e0',
-                  outline: 'none',
-                  WebkitAppearance: 'none',
-                  cursor: 'pointer',
-                }}
-                onMouseDown={(e) => {
-                  e.target.style.background = darkMode ? '#777777' : '#cccccc';
-                }}
-                onMouseUp={(e) => {
-                  e.target.style.background = darkMode ? '#555555' : '#e0e0e0';
-                }}
-              />
-              <style>{`
-                input[type="range"]::-webkit-slider-thumb {
-                  -webkit-appearance: none;
-                  appearance: none;
-                  width: 20px;
-                  height: 20px;
-                  border-radius: 50%;
-                  background: ${darkMode ? '#2D2D2D' : '#000000'};
-                  cursor: pointer;
-                  border: 2px solid ${darkMode ? '#ffffff' : '#ffffff'};
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-                input[type="range"]::-moz-range-thumb {
-                  width: 20px;
-                  height: 20px;
-                  border-radius: 50%;
-                  background: ${darkMode ? '#2D2D2D' : '#000000'};
-                  cursor: pointer;
-                  border: 2px solid ${darkMode ? '#ffffff' : '#ffffff'};
-                  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-              `}</style>
-            </View>
-          </View>
-
-          {images.length > 0 && (
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[
-                  styles.convertAllButton,
-                  (isConverting) && styles.convertAllButtonDisabled
-                ]}
-                onPress={convertAllImages}
-                disabled={isConverting}
-              >
-                {isConverting ? (
-                  <View style={styles.loadingContainer}>
-                    <Animated.View 
-                      style={[
-                        styles.loadingSpinner,
-                        {
-                          transform: [{
-                            rotate: spinAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: ['0deg', '360deg']
-                            })
-                          }]
-                        }
-                      ]} 
-                    />
-                    <Text style={styles.buttonText}>Converting All...</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.buttonText}>Convert All ({images.length})</Text>
-                )}
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.clearAllButton}
-                onPress={clearAllImages}
-              >
-                <Text style={styles.buttonText}>Clear All</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {images.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Uploaded Images ({images.length})</Text>
-            <View style={styles.imageGrid}>
-              {images.map((image, index) => (
-                <View key={image.id} style={styles.imageItem}>
-                  <img src={image.url} style={styles.image} alt={image.name} />
-                  
-                  {/* Loading overlay */}
-                  {convertingImages.has(image.id) && (
-                    <View style={styles.imageOverlay}>
-                      <Animated.View 
-                        style={[
-                          styles.loadingSpinner,
-                          {
-                            transform: [{
-                              rotate: individualSpinAnim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: ['0deg', '360deg']
-                              })
-                            }]
-                          }
-                        ]} 
-                      />
-                    </View>
-                  )}
-                  
-                  {/* Action buttons */}
-                  <View style={styles.imageButtons}>
-                                        <TouchableOpacity
-                      style={[styles.imageButton, styles.convertButton]}
-                      onPress={() => convertSingleImage(image)}
-                      disabled={convertingImages.has(image.id)}
-                    >
-                      <Text style={styles.imageButtonText}>
-                        {convertingImages.has(image.id) ? '⏳' : 'Convert'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.imageButton, styles.cropButton]}
-                      onPress={() => openCropper(image)}
-                      disabled={convertingImages.has(image.id)}
-                    >
-                      <Text style={styles.imageButtonText}>Crop</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={[styles.imageButton, styles.removeButton]}
-                      onPress={() => removeImage(image.id)}
-                      disabled={convertingImages.has(image.id)}
-                    >
-                      <Text style={styles.imageButtonText}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  
-                </View>
+              <Icon name="help" size={18} />
+            </button>
+            <div
+              className="theme-toggle"
+              role="group"
+              aria-label="Color theme"
+              style={segment(theme === "dark" ? 1 : 0, 2)}
+            >
+              {[
+                ["light", "sun", "Light theme"],
+                ["dark", "moon", "Dark theme"],
+              ].map(([value, icon, label]) => (
+                <button
+                  key={value}
+                  className={theme === value ? "selected" : ""}
+                  aria-pressed={theme === value}
+                  aria-label={label}
+                  title={label}
+                  onClick={() =>
+                    theme !== value &&
+                    withViewTransition(() => setThemePreference(value))
+                  }
+                >
+                  <Icon name={icon} size={16} />
+                </button>
               ))}
-            </View>
-          </View>
-        )}
+            </div>
+          </div>
+        </div>
+      </header>
 
-        {convertedImages.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitleWithCount}>
-                Converted Images ({convertedImages.length})
-              </Text>
-              <TouchableOpacity
-                style={styles.clearConvertedButton}
-                onPress={clearAllConverted}
-              >
-                <Text style={styles.clearConvertedButtonText}>Clear All</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {convertedImages.map((image, index) => (
-              <View key={index} style={styles.convertedItem}>
-                <img src={image.url} style={styles.convertedImage} alt={image.name} />
-                                  <View style={styles.convertedInfo}>
-                   <Text style={styles.convertedSize}>
-                     {formatFileSize(image.size)} (was {formatFileSize(image.originalSize)})
-                   </Text>
-                   <Text style={styles.compressionInfo}>
-                     {image.compressionRatio}% smaller
-                   </Text>
-                 </View>
-                <TouchableOpacity
-                  style={styles.downloadButton}
-                  onPress={() => downloadImage(image.url, image.name)}
+      <section className="hero">
+        <div className="brand-mesh" aria-hidden="true" />
+        <div className="hero-inner">
+          <div>
+            <span className="eyebrow">
+              <i /> Convert &amp; edit
+            </span>
+            <h2>
+              A little edit. A lighter image<b>.</b>
+            </h2>
+          </div>
+          <button
+            className="button secondary"
+            disabled={busy || items.length >= MAX_FILES}
+            onClick={() => input.current.click()}
+          >
+            <Icon name="plus" size={16} />
+            Add images
+          </button>
+        </div>
+      </section>
+
+      <input
+        ref={input}
+        className="visually-hidden"
+        type="file"
+        accept={ACCEPT}
+        multiple
+        onChange={(event) => {
+          addFiles(event.target.files);
+          event.target.value = "";
+        }}
+        aria-label="Choose images"
+        tabIndex={-1}
+      />
+
+      <main className="studio">
+        <section className="panel workspace" aria-labelledby="workspace-title">
+          <div className="panel-head">
+            <h3 id="workspace-title">
+              Images <span className="count">{items.length}</span>
+            </h3>
+            {!empty && (
+              <div className="panel-tools">
+                <button className="text-button" onClick={clear} disabled={busy}>
+                  Clear all
+                </button>
+                <div
+                  className="segmented small"
+                  role="group"
+                  aria-label="Layout"
+                  style={segment(view === "grid" ? 0 : 1, 2)}
                 >
-                  <Text style={styles.downloadButtonText}>Download</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.removeConvertedButton}
-                  onPress={() => removeConvertedImage(index)}
-                >
-                  <Text style={styles.removeConvertedButtonText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-            
-            {convertedImages.length > 1 && (
-              <TouchableOpacity
-                style={styles.downloadAllButton}
-                onPress={downloadAll}
-              >
-                <Text style={styles.downloadAllButtonText}>
-                  Download All as ZIP
-                </Text>
-              </TouchableOpacity>
+                  <button
+                    className={view === "grid" ? "selected" : ""}
+                    aria-label="Grid view"
+                    aria-pressed={view === "grid"}
+                    onClick={() => setView("grid")}
+                  >
+                    <Icon name="grid" size={14} />
+                  </button>
+                  <button
+                    className={view === "list" ? "selected" : ""}
+                    aria-label="List view"
+                    aria-pressed={view === "list"}
+                    onClick={() => setView("list")}
+                  >
+                    <Icon name="list" size={15} />
+                  </button>
+                </div>
+              </div>
             )}
-          </View>
-        )}
+          </div>
+          {empty ? (
+            <div className={`dropzone ${dragging ? "dragging" : ""}`}>
+              <Mascot />
+              <h4>{loading ? "Opening your images…" : "Good images start here."}</h4>
+              <p>Drop images here, or choose them from your device.</p>
+              <button
+                className="button primary"
+                disabled={busy}
+                onClick={() => input.current.click()}
+              >
+                <Icon name="upload" size={16} />
+                Choose images
+              </button>
+              <small>or paste from your clipboard</small>
+            </div>
+          ) : (
+            <div className={`queue ${view}`} key={view} aria-live="polite">
+              {items.map((item, index) => {
+                const dim = getOutputDimensions(item, settings);
+                const eff = effective(item, settings);
+                const custom =
+                  item.crop ||
+                  item.out ||
+                  item.rotation ||
+                  item.flipped ||
+                  item.format ||
+                  item.quality != null;
+                const fmt = extension(eff.format).toUpperCase();
+                const changed =
+                  dim.width !== item.width || dim.height !== item.height;
+                return (
+                  <article
+                    className={`card ${item.result ? "done" : ""} ${leaving.has(item.id) ? "leaving" : ""}`}
+                    key={item.id}
+                    style={{ "--d": `${Math.min(index, 12) * 40}ms` }}
+                  >
+                    <button
+                      className="thumb checker"
+                      onClick={() => setEditId(item.id)}
+                      disabled={busy}
+                      aria-label={`Edit ${item.name}`}
+                    >
+                      <img src={item.thumb || item.url} alt="" />
+                      {custom && <span className="tag">Edited</span>}
+                      {item.result && (
+                        <span className="tag ready">
+                          <Icon name="check" size={11} />
+                        </span>
+                      )}
+                    </button>
+                    <div className="card-body">
+                      <h4 title={item.name}>{item.name}</h4>
+                      <p>
+                        {item.result ? (
+                          <>
+                            {item.result.width} × {item.result.height} ·{" "}
+                            {extension(item.result.format).toUpperCase()} ·{" "}
+                            {formatBytes(item.result.blob.size)}
+                          </>
+                        ) : (
+                          <>
+                            {changed
+                              ? `${item.width} × ${item.height} → ${dim.width} × ${dim.height}`
+                              : `${item.width} × ${item.height}`}{" "}
+                            · {fmt}
+                            {eff.format !== "png" && ` ${eff.quality}%`}
+                          </>
+                        )}
+                      </p>
+                      {item.error && (
+                        <p className="card-error" role="alert">
+                          {item.error}
+                        </p>
+                      )}
+                    </div>
+                    <div className="card-actions">
+                      <button
+                        className="button ghost small"
+                        disabled={busy}
+                        onClick={() => setEditId(item.id)}
+                      >
+                        <Icon name="edit" size={14} />
+                        Edit
+                      </button>
+                      <button
+                        className="icon-button small"
+                        aria-label={`Download ${item.name}`}
+                        title="Download this image"
+                        disabled={busy || sizeInvalid}
+                        onClick={() => downloadOne(item)}
+                      >
+                        <Icon name="download" size={15} />
+                      </button>
+                      <button
+                        className="icon-button small danger"
+                        aria-label={`Remove ${item.name}`}
+                        title="Remove"
+                        disabled={busy}
+                        onClick={() => remove(item.id)}
+                      >
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              <button
+                className="add-tile"
+                disabled={busy || items.length >= MAX_FILES}
+                onClick={() => input.current.click()}
+              >
+                <Icon name="plus" size={20} />
+                <span>{loading ? "Opening…" : "Add more"}</span>
+              </button>
+            </div>
+          )}
+          <div className="panel-foot">
+            <span>JPG, PNG, WebP, GIF, SVG, BMP, AVIF</span>
+            <span>Up to {MAX_FILES} images · 50 MB each</span>
+          </div>
+        </section>
 
-        {images.length === 0 && convertedImages.length === 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Results</Text>
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>
-                Upload images to get started
-              </Text>
-            </View>
-          </View>
-        )}
-      </ScrollView>
+        <aside className="panel settings" aria-labelledby="settings-title">
+          <div className="panel-head">
+            <h3 id="settings-title">Batch settings</h3>
+            <button
+              className="icon-button small"
+              aria-label="Reset batch settings"
+              title="Reset"
+              disabled={busy}
+              onClick={() => updateSettings(defaults)}
+            >
+              <Icon name="reset" size={14} />
+            </button>
+          </div>
+          <fieldset disabled={busy} className="settings-body">
+            <div className="field">
+              <div className="field-top">
+                <span className="field-label">Format</span>
+              </div>
+              <div
+                className="segmented"
+                role="group"
+                aria-label="Output format"
+                style={segment(["webp", "jpeg", "png"].indexOf(settings.format), 3)}
+              >
+                {[
+                  ["webp", "WebP"],
+                  ["jpeg", "JPG"],
+                  ["png", "PNG"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={settings.format === value ? "selected" : ""}
+                    aria-pressed={settings.format === value}
+                    onClick={() => updateSettings({ format: value })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-top">
+                <label className="field-label" htmlFor="quality">
+                  Quality
+                </label>
+                <span className="pill">
+                  {settings.format === "png" ? "Lossless" : `${settings.quality}%`}
+                </span>
+              </div>
+              <input
+                id="quality"
+                className="slider"
+                type="range"
+                min="10"
+                max="100"
+                value={settings.quality}
+                disabled={settings.format === "png"}
+                style={{ "--fill": `${((settings.quality - 10) / 90) * 100}%` }}
+                onChange={(e) => updateSettings({ quality: Number(e.target.value) })}
+              />
+              <div className="presets">
+                {[
+                  ["Compact", 65],
+                  ["Balanced", 85],
+                  ["Best", 100],
+                ].map(([label, value]) => (
+                  <button
+                    key={label}
+                    className={
+                      settings.quality === value && settings.format !== "png"
+                        ? "selected"
+                        : ""
+                    }
+                    disabled={settings.format === "png"}
+                    onClick={() => updateSettings({ quality: value })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-top">
+                <label className="field-label" htmlFor="resize">
+                  Limit size
+                </label>
+                <input
+                  id="resize"
+                  type="checkbox"
+                  role="switch"
+                  className="toggle"
+                  checked={settings.resize}
+                  onChange={(e) => updateSettings({ resize: e.target.checked })}
+                />
+              </div>
+              <div
+                className={`collapse ${settings.resize ? "open" : ""}`}
+                aria-hidden={!settings.resize}
+              >
+                <div className="collapse-inner">
+                  <div className="size-row">
+                    <label className="size-field">
+                      <span>Max width</span>
+                      <div>
+                        <input
+                          inputMode="numeric"
+                          placeholder="Auto"
+                          value={settings.width}
+                          onChange={(e) =>
+                            updateSettings({
+                              width: e.target.value.replace(/\D/g, "").slice(0, 5),
+                            })
+                          }
+                        />
+                        <i>px</i>
+                      </div>
+                    </label>
+                    <button
+                      className={`icon-button link-toggle ${settings.locked ? "on" : ""}`}
+                      aria-pressed={settings.locked}
+                      aria-label="Keep proportions"
+                      title={settings.locked ? "Keeps proportions" : "May stretch"}
+                      onClick={() => updateSettings({ locked: !settings.locked })}
+                    >
+                      <Icon name="link" size={16} />
+                    </button>
+                    <label className="size-field">
+                      <span>Max height</span>
+                      <div>
+                        <input
+                          inputMode="numeric"
+                          placeholder="Auto"
+                          value={settings.height}
+                          onChange={(e) =>
+                            updateSettings({
+                              height: e.target.value.replace(/\D/g, "").slice(0, 5),
+                            })
+                          }
+                        />
+                        <i>px</i>
+                      </div>
+                    </label>
+                  </div>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={settings.upscale}
+                      onChange={(e) => updateSettings({ upscale: e.target.checked })}
+                    />
+                    Allow enlargement
+                  </label>
+                  {sizeInvalid && (
+                    <p className="card-error" role="alert">
+                      Enter whole numbers from 1 to 16,384.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="field">
+              <div className="field-top">
+                <label className="field-label" htmlFor="suffix">
+                  Filename suffix
+                </label>
+                <span className="optional">Optional</span>
+              </div>
+              <input
+                className="text-input"
+                id="suffix"
+                placeholder="e.g. -optimized"
+                maxLength={40}
+                value={settings.suffix}
+                onChange={(e) =>
+                  updateSettings({
+                    suffix: e.target.value.replace(/[\\/:*?"<>|\x00-\x1f]/g, ""),
+                  })
+                }
+              />
+            </div>
+          </fieldset>
+          <div className="export">
+            <div className="export-stats">
+              {results.length > 0 ? (
+                <>
+                  <span>
+                    {formatBytes(originalBytes)} → {formatBytes(outputBytes)}
+                  </span>
+                  <span className={savings > 0 ? "good" : ""}>
+                    {savings > 0
+                      ? `${savings}% lighter`
+                      : savings < 0
+                        ? `${Math.abs(savings)}% larger`
+                        : "Same size"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {items.length
+                      ? `${items.length} image${items.length === 1 ? "" : "s"}`
+                      : "No images yet"}
+                  </span>
+                  <span>{items.length ? formatBytes(inputBytes) : ""}</span>
+                </>
+              )}
+            </div>
+            <button
+              className={`button primary block ${working ? "working" : ""}`}
+              style={{
+                "--p": working?.total
+                  ? `${(working.index / working.total) * 100}%`
+                  : "100%",
+              }}
+              disabled={!items.length || busy || sizeInvalid}
+              onClick={downloadAll}
+            >
+              {working ? (
+                <>
+                  <span className="spinner" />
+                  {working.total
+                    ? `${working.label} ${working.index}/${working.total}`
+                    : `${working.label}…`}
+                </>
+              ) : (
+                <>
+                  <Icon name="download" size={16} />
+                  {items.length > 1
+                    ? `Download all ${items.length}`
+                    : "Download image"}
+                  <em>{items.length > 1 ? ".zip" : `.${extension(settings.format)}`}</em>
+                </>
+              )}
+            </button>
+            <p className="export-note">
+              Edit any image to give it its own settings.
+            </p>
+          </div>
+        </aside>
+      </main>
 
-      {/* Image Cropper Modal */}
-      {showCropper && croppingImage && (
-        <View style={styles.cropperOverlay}>
-          <ImageCropper
-            image={croppingImage}
-            onCropComplete={handleCropComplete}
-            onCancel={() => setShowCropper(false)}
-            darkMode={darkMode}
-          />
-        </View>
+      <footer className="app-footer">
+        <div className="footer-inner">
+          <div className="footer-brand">
+            <a
+              href="https://shifros.com"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Shifros Studio home"
+            >
+              <img src="/brand/shifros-studio-reversed.svg" alt="Shifros Studio" />
+            </a>
+            <span className="footer-brand-rule" />
+            <span>
+              Thoughtfully made.
+              <br />
+              <strong>For the everyday.</strong>
+            </span>
+          </div>
+          <div className="footer-actions">
+            <button onClick={() => setHelp(true)}>
+              How it works
+              <Icon name="arrow" size={14} />
+            </button>
+            <button onClick={() => setFaq(true)}>
+              FAQ
+              <Icon name="arrow" size={14} />
+            </button>
+            <a href="https://shifros.com" target="_blank" rel="noreferrer">
+              shifros.com
+              <Icon name="external" size={13} />
+            </a>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          <span>
+            Image Studio <span className="footer-dot">/</span> A tool by Shifros
+          </span>
+          <span className="footer-shortcut">
+            <kbd>Ctrl</kbd> + <kbd>O</kbd> to add images
+          </span>
+          <span className="footer-local">
+            <i /> On your device. Always.
+          </span>
+        </div>
+      </footer>
+
+      {notice && (
+        <div
+          className={`toast ${notice.type}`}
+          role={notice.type === "error" ? "alert" : "status"}
+        >
+          <Icon name={notice.type === "error" ? "help" : "check"} size={16} />
+          <span>{notice.text}</span>
+          <button
+            className="icon-button small"
+            aria-label="Dismiss"
+            onClick={() => setNotice(null)}
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
       )}
-    </View>
+      {dragging && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div>
+            <Icon name="upload" size={32} />
+            <h2>Drop your images.</h2>
+            <p>We’ll take it from here.</p>
+          </div>
+        </div>
+      )}
+      {editing && (
+        <ImageEditor
+          key={editing.id}
+          image={editing}
+          batch={settings}
+          onClose={() => setEditId(null)}
+          onSave={(patch, andDownload) => saveEdit(editing.id, patch, andDownload)}
+        />
+      )}
+      {help && <Help onClose={() => setHelp(false)} />}
+      {faq && <Faq onClose={() => setFaq(false)} />}
+      {agentGuide && <AgentGuide onClose={() => setAgentGuide(false)} />}
+    </div>
   );
-};
-
-export default App;
-
+}

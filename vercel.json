@@ -1,13 +1,36 @@
 {
-	"version": 2,
-	"rewrites": [
-		{ "source": "/api/convert", "destination": "/api/convert.js" },
-		{ "source": "/api/convert-multiple", "destination": "/api/convert-multiple.js" },
-		{ "source": "/api/test", "destination": "/api/test.js" },
-		{ "source": "/api/health", "destination": "/api/health.js" },
-		{ "source": "/", "destination": "/dist/index.html" },
-		{ "source": "/(.*)", "destination": "/dist/$1" }
-	],
-	"buildCommand": "npm run build",
-	"outputDirectory": "dist"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(brand|icons)/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/llms.txt",
+      "headers": [
+        { "key": "Content-Type", "value": "text/plain; charset=utf-8" }
+      ]
+    }
+  ]
 }

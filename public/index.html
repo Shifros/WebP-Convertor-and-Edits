@@ -1,43 +1,155 @@
-<!DOCTYPE html>
+<% const site = htmlWebpackPlugin.options.site; const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); %><!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebP Edit and Converter</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-                sans-serif;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            background-color: #ffffff;
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-        
-        #root {
-            min-height: 100vh;
-            background-color: #ffffff;
-        }
-        
-        /* Dark mode styles */
-        body.dark-mode {
-            background-color: #000000;
-        }
-        
-        body.dark-mode #root {
-            background-color: #000000;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= esc(site.title) %></title>
+    <meta name="description" content="<%= esc(site.description) %>" />
+    <link rel="canonical" href="<%= site.url %>" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#0B0B0F" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="application-name" content="Image Studio" />
+    <meta name="apple-mobile-web-app-title" content="Image Studio" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Shifros" />
+    <meta property="og:url" content="<%= site.url %>" />
+    <meta property="og:title" content="<%= esc(site.title) %>" />
+    <meta property="og:description" content="<%= esc(site.description) %>" />
+    <meta property="og:image" content="<%= site.url %>og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Image Studio by Shifros: WebP converter. Resize, crop, compress." />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="<%= esc(site.title) %>" />
+    <meta name="twitter:description" content="<%= esc(site.description) %>" />
+    <meta name="twitter:image" content="<%= site.url %>og-image.jpg" />
+
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="Agent spec" />
+    <script>
+      try {
+        var t = localStorage.getItem("shifros-theme-preference");
+        if (t !== "light" && t !== "dark")
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        t = "light";
+      }
+      // Background art loads after first paint, sized to the screen. Slow or
+      // data-saving connections keep the inline placeholder only.
+      (function (d) {
+        var c = navigator.connection || {}, done = {};
+        var slow = c.saveData || /(^|-)2g|3g/.test(c.effectiveType || "");
+        try { slow = slow || matchMedia("(prefers-reduced-data: reduce)").matches; } catch (e) {}
+        var need = Math.max(innerWidth, innerHeight * 1.355) * Math.min(devicePixelRatio || 1, 2);
+        var size = innerWidth < 720 ? 1280 : need <= 1400 ? 1280 : need <= 2100 ? 1920 : 2560;
+        window.__mesh = function (theme) {
+          if (slow || done[theme]) return;
+          done[theme] = 1;
+          var src = "/brand/" + (theme === "dark" ? "night-shift" : "mint-rush") + "-" + size + ".webp";
+          var i = new Image();
+          i.fetchPriority = "low";
+          i.src = src;
+          (i.decode ? i.decode() : Promise.resolve()).then(function () {
+            d.style.setProperty("--art-" + theme, 'url("' + src + '")');
+          }, function () {});
+        };
+        window.__mesh(t);
+      })(document.documentElement);
+    </script>
+    <link rel="preload" href="/brand/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/brand/CalSans-Variable.woff2" as="font" type="font/woff2" crossorigin />
+
+    <script type="application/ld+json">
+      <%= JSON.stringify({
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "@id": site.url + "#app",
+            "name": site.name,
+            "alternateName": ["Shifros Image Studio", "Shifros WebP Converter"],
+            "url": site.url,
+            "description": site.description,
+            "applicationCategory": "MultimediaApplication",
+            "applicationSubCategory": "Image converter",
+            "operatingSystem": "Any (web browser)",
+            "browserRequirements": "Requires JavaScript and a modern browser.",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "image": site.url + "og-image.jpg",
+            "screenshot": site.url + "og-image.jpg",
+            "featureList": [
+              "Convert images to WebP, JPG or PNG",
+              "Batch conversion of up to 20 images with ZIP download",
+              "Per-image format, quality, size, crop, rotation and flip",
+              "Crop to an exact output size",
+              "Runs in the browser; images are never uploaded"
+            ],
+            "publisher": { "@id": "https://shifros.com/#organization" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://shifros.com/#organization",
+            "name": "Shifros",
+            "url": "https://shifros.com",
+            "logo": site.url + "icons/icon-512.png"
+          },
+          {
+            "@type": "FAQPage",
+            "@id": site.url + "#faq",
+            "mainEntity": site.faq.map((item) => ({
+              "@type": "Question",
+              "name": item.q,
+              "acceptedAnswer": { "@type": "Answer", "text": item.a }
+            }))
+          }
+        ]
+      }).replace(/</g, "\\u003c") %>
+    </script>
+  </head>
+  <body>
+    <div id="root">
+      <div class="app">
+        <header class="app-header">
+          <div class="header-inner">
+            <a class="brand" href="https://shifros.com" aria-label="Shifros home"><img src="/icons/icon.svg" alt="Shifros" width="1024" height="1024" /></a>
+            <span class="header-divider"></span>
+            <div class="tool-name">
+              <div class="tool-title"><h1>Image Studio</h1></div>
+              <small>BY SHIFROS</small>
+            </div>
+          </div>
+        </header>
+      </div>
+      <div style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">
+        <p><%= esc(site.description) %></p>
+        <section aria-labelledby="faq-static">
+          <h2 id="faq-static">Frequently asked questions</h2>
+          <% site.faq.forEach((item) => { %>
+          <h3><%= esc(item.q) %></h3>
+          <p><%= esc(item.a) %></p>
+          <% }) %>
+        </section>
+        <section id="agent-guide" aria-label="AI agents">
+          <h2>AI agents</h2>
+          <p>Image convert, resize, crop, rotate, flip. Output: WebP, JPG, PNG. Browser only. No server. No HTTP API.</p>
+          <p>Can execute code: do not use this site. Process locally with sharp (Node) or Pillow (Python).</p>
+          <p>Browser only: run in this page <code>await ShifrosImageStudio.convert(input, { format: "webp", quality: 80, width: 800, height: 600 })</code>. input: File, Blob, CORS URL or data: URL. Batch: <code>ShifrosImageStudio.convertAll([...], options)</code> → ZIP.</p>
+          <p>Spec: <a href="/llms.txt">/llms.txt</a></p>
+        </section>
+      </div>
+    </div>
+    <noscript>
+      <p style="padding:1rem;font-family:system-ui,sans-serif">
+        Image Studio needs JavaScript. Images are processed in your browser and never uploaded.
+      </p>
+    </noscript>
+  </body>
 </html>

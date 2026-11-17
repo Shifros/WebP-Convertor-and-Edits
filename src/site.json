@@ -1,0 +1,36 @@
+{
+  "name": "Image Studio",
+  "url": "https://webp.shifros.com/",
+  "title": "Image Studio by Shifros — WebP Converter, Resize & Crop",
+  "description": "Convert images to WebP, JPG or PNG, then resize, crop and compress them in your browser. Free, no sign-up, and nothing is uploaded.",
+  "faq": [
+    {
+      "q": "How do I convert an image to WebP?",
+      "a": "Add your images, choose WebP under Batch settings, set the quality and press Download. Up to 20 images download as one ZIP."
+    },
+    {
+      "q": "Are my images uploaded to a server?",
+      "a": "No. Image Studio converts and edits images inside your browser. Files never leave your device and are cleared when you close the tab."
+    },
+    {
+      "q": "Which formats are supported?",
+      "a": "Input: JPG, PNG, WebP, GIF, SVG, BMP and AVIF. Output: WebP, JPG and PNG."
+    },
+    {
+      "q": "Can I resize or crop an image to an exact size?",
+      "a": "Yes. Press Edit on an image and type the width and height, for example 500 × 600. The crop box locks to that shape; move it to choose the area, and the export is exactly that size."
+    },
+    {
+      "q": "Can each image have its own settings?",
+      "a": "Yes. Batch settings apply to every image, and Edit gives one image its own format, quality, size, crop, rotation and flip."
+    },
+    {
+      "q": "What quality should I use for WebP?",
+      "a": "75 to 85 suits most photos and keeps files small. Use 90 or higher for detailed artwork, or PNG when you need lossless output."
+    },
+    {
+      "q": "Is Image Studio free?",
+      "a": "Yes. There is no account and no watermark. Limits: 20 images at a time, 50 MB each, up to 64 megapixels and 16,384 pixels per side."
+    }
+  ]
+}

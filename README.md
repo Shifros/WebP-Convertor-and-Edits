@@ -1,117 +1,65 @@
-<<<<<<< HEAD
-# Playground - WebP Converter
+# Image Studio by Shifros
 
-A modern WebP converter built with React Native Web and Sharp backend, featuring advanced image cropping and resizing capabilities.
+Convert images to WebP, JPG or PNG, then resize, crop and compress them in the browser. Images are never uploaded.
+
+Live: https://webp.shifros.com
 
 ## Features
 
-- 🖼️ **Image Upload & Conversion**: Convert images to WebP format
-- ✂️ **Advanced Cropping**: Interactive crop tool with aspect ratio controls
-- 📏 **Custom Sizing**: Resize images to exact dimensions
-- 🎨 **Multiple Formats**: Support for JPEG, PNG, GIF, WebP, TIFF, BMP
-- 🌙 **Dark/Light Mode**: Beautiful UI with theme switching
-- 📱 **Responsive Design**: Works on desktop and mobile devices
+- Batch conversion of up to 20 images (JPG, PNG, WebP, GIF, SVG, BMP, AVIF) to WebP, JPG or PNG.
+- Batch settings: format, quality, maximum size, filename suffix.
+- Per-image overrides: format, quality, exact output size, crop, rotation, flip.
+- Crop to an exact size: enter a width and height and the crop box locks to that ratio.
+- Download one image or all images as a ZIP.
+- Light and dark themes, keyboard shortcuts (Ctrl+O, paste), drag and drop.
+- Responsive from phones to 4K displays.
 
-## Tech Stack
+Limits: 50 MB per file, 64 megapixels, 16,384 pixels per side. Animated images export as their first frame. JPG has no transparency; transparent areas become white.
 
-- **Frontend**: React Native Web, React Image Crop
-- **Backend**: Node.js, Express, Sharp
-- **Build Tool**: Webpack
-- **Styling**: React Native StyleSheet
+## Privacy
 
-## Local Development
+All decoding, editing and encoding uses the browser's canvas. There is no server, no HTTP API, no analytics and no third-party requests. Files live in memory and are cleared when the tab closes.
 
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd webp-converter
-   ```
+## Development
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+Requires Node.js 20 or later.
 
-3. **Start development server**
-   ```bash
-   npm run dev:full
-   ```
-
-4. **Open in browser**
-   - Frontend: http://localhost:3000
-   - Backend: http://localhost:3001
-
-## Production Deployment
-
-### Deploy to Vercel
-
-1. **Push to GitHub**
-   ```bash
-   git add .
-   git commit -m "Production ready"
-   git push origin main
-   ```
-
-2. **Connect to Vercel**
-   - Go to [vercel.com](https://vercel.com)
-   - Import your GitHub repository
-   - Vercel will automatically detect the configuration
-
-3. **Environment Variables** (if needed)
-   - Add any environment variables in Vercel dashboard
-   - Default PORT will be set automatically
-
-### Manual Deployment
-
-1. **Build the project**
-   ```bash
-   npm run build
-   ```
-
-2. **Start production server**
-   ```bash
-   npm run server
-   ```
-
-## API Endpoints
-
-- `POST /convert` - Convert image to WebP
-- `POST /convert-batch` - Convert multiple images
-- `GET /health` - Health check
-- `GET /download/:filename` - Download converted file
-
-## File Structure
-
-```
-webp-converter/
-├── src/
-│   ├── App.js              # Main React component
-│   ├── ImageCropper.js     # Image cropping modal
-│   └── index.js            # Entry point
-├── public/
-│   └── index.html          # HTML template
-├── server.js               # Express backend
-├── webpack.config.js       # Webpack configuration
-├── vercel.json            # Vercel deployment config
-└── package.json           # Dependencies and scripts
+```sh
+npm ci
+npm run dev      # http://localhost:3000
+npm run build    # static site in dist/
 ```
 
-## Contributing
+## Deployment
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+`dist/` is a static site. Vercel builds it with `npm run build` and serves it with the headers in `vercel.json`. JavaScript bundles are content-hashed and cached for one year.
+
+## Search and agents
+
+- `src/site.json`: title, description, canonical URL and FAQ. Used by the page, the meta tags and the JSON-LD.
+- `public/index.html`: meta tags, Open Graph, Twitter card, JSON-LD (WebApplication, Organization, FAQPage) and crawlable fallback content.
+- `sitemap.xml`: generated at build time.
+- `robots.txt`, `llms.txt`, `og-image.jpg`, `favicon.ico`, `icons/`: copied from `public/` at build time.
+- `window.ShifrosImageStudio`: in-page API for browser agents. Spec in `public/llms.txt`.
+- Link presets: `?format=webp&quality=80&width=1200&height=1200&suffix=-web`.
+
+## Project structure
+
+| Path | Purpose |
+|------|---------|
+| `src/App.js` | Workspace, batch settings, file lifecycle, dialogs |
+| `src/ImageEditor.js` | Per-image crop, size, format, quality, rotation, flip |
+| `src/image-tools.js` | Decoding, transforms, encoding, download helpers |
+| `src/agent-api.js` | `window.ShifrosImageStudio` and WebMCP tool |
+| `src/motion.js` | Dialog close animation, view transitions, segmented controls |
+| `src/Icon.js` | Inline icon set |
+| `src/styles.css` | Design tokens, layout, themes, motion |
+| `src/site.json` | Site metadata and FAQ |
+| `public/brand/` | Logos, fonts, background artwork |
+| `public/icons/` | App icons and favicon sizes |
 
 ## License
 
-MIT License - feel free to use this project for personal or commercial purposes.
+Source code: MIT, see `LICENSE`.
 
-## Support
-
-For issues and questions, please open an issue on GitHub.
-=======
-# WebP-Convertor-and-Edits
-React + Node.js app to convert images to WebP and perform edits (resize, crop, dimension changes) using Sharp.
->>>>>>> dc7b2a3bedba7ec9d431e4a0e759df4f68061218
+The Shifros name, logos, app icon and background artwork in `public/brand/`, `public/icons/`, `public/favicon.ico` and `public/og-image.jpg` are not covered by the MIT license and may not be used without permission. Cal Sans and Inter are licensed under the SIL Open Font License; see `public/brand/`.

@@ -1,0 +1,71 @@
+# Image Studio — https://webp.shifros.com
+
+Image conversion, resize, crop, rotate, flip. Output: WebP, JPG, PNG.
+Browser only. No server. No HTTP API. Files never leave the device.
+
+## Choose a path
+
+A. You can execute code (shell, Node, Python): do not use this site. Process locally.
+B. You can only operate a browser: open this site and call the in-page API.
+
+## A. Local
+
+Node:
+
+    npm i sharp
+    node -e "require('sharp')('in.png').resize(800,600,{fit:'cover'}).webp({quality:80}).toFile('out.webp')"
+
+Python:
+
+    pip install Pillow
+    python -c "from PIL import Image,ImageOps; ImageOps.fit(Image.open('in.png'),(800,600)).save('out.webp',quality=80)"
+
+## B. Browser
+
+Open https://webp.shifros.com. Run in the page:
+
+    await ShifrosImageStudio.convert(input, { format: "webp", quality: 80, width: 800, height: 600 })
+
+input: File | Blob | image URL (CORS required) | data: URL
+returns: { blob, filename, format, mimeType, width, height, bytes, originalBytes, originalWidth, originalHeight, url, dataUrl? }
+Downloads the file unless download: false.
+
+Batch, one ZIP:
+
+    await ShifrosImageStudio.convertAll([a, b, c], { format: "webp" })
+
+Reference object: ShifrosImageStudio.describe()
+
+### Options
+
+format         "webp" | "jpg" | "png"            default "webp"
+quality        1-100                             default 85; ignored for png
+width, height  1-16384 px
+fit            "cover" | "contain" | "fill"      default "cover"; applies when both width and height are set
+crop           { x, y, width, height } px        after rotate, before resize
+rotate         0 | 90 | 180 | 270                clockwise
+flip           boolean                           horizontal
+upscale        boolean                           default false; with contain or a single side
+suffix         string                            appended to filename
+filename       string                            replaces source name
+download       boolean                           default true
+returnDataUrl  boolean                           default false
+zipName        string                            convertAll only
+
+cover: centre-crop to target ratio, output exactly width x height.
+contain: fit inside width x height, keep ratio.
+fill: stretch to width x height.
+One side only: scale to that side, keep ratio.
+
+### Limits
+
+64 MP per image. 16384 px per side. Animated input: first frame. JPG: transparency becomes white.
+
+### Link presets
+
+https://webp.shifros.com/?format=webp&quality=80&width=1200&height=1200&suffix=-web
+Keys: format, quality, width, height (max box, keep ratio), suffix. Files are still added by the user.
+
+### WebMCP
+
+If navigator.modelContext exists, tool "convert_image" is registered. Params as above; image_url replaces input.

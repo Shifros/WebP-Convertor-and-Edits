@@ -129,8 +129,12 @@
         </header>
         <section class="faq-section" id="faq" aria-labelledby="faq-title">
           <div class="faq-inner">
-            <h2 id="faq-title">Frequently asked questions</h2>
-            <div class="faq-list">
+            <div class="faq-intro">
+              <span class="eyebrow">FAQ</span>
+              <h2 id="faq-title">Frequently asked questions</h2>
+              <p>Short answers about formats, privacy and quality.</p>
+            </div>
+            <div class="faq-list panel">
               <% site.faq.forEach((item) => { %>
               <details><summary><%= esc(item.q) %></summary><p><%= esc(item.a) %></p></details>
               <% }) %>

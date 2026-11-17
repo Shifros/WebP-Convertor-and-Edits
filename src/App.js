@@ -160,8 +160,12 @@ function FaqSection() {
   return (
     <section className="faq-section" id="faq" aria-labelledby="faq-title">
       <div className="faq-inner">
-        <h2 id="faq-title">Frequently asked questions</h2>
-        <div className="faq-list">
+        <div className="faq-intro">
+          <span className="eyebrow">FAQ</span>
+          <h2 id="faq-title">Frequently asked questions</h2>
+          <p>Short answers about formats, privacy and quality.</p>
+        </div>
+        <div className="faq-list panel">
           {site.faq.map((item) => (
             <details key={item.q}>
               <summary>

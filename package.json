@@ -20,6 +20,12 @@
     "dev": "webpack serve --mode development",
     "vercel-build": "npm run build"
   },
+  "browserslist": [
+    "chrome >= 100",
+    "edge >= 100",
+    "firefox >= 100",
+    "safari >= 15.4"
+  ],
   "engines": {
     "node": ">=20"
   },

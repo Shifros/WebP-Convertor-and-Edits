@@ -161,7 +161,6 @@ function FaqSection() {
     <section className="faq-section" id="faq" aria-labelledby="faq-title">
       <div className="faq-inner">
         <div className="faq-intro">
-          <span className="eyebrow">FAQ</span>
           <h2 id="faq-title">Frequently asked questions</h2>
           <p>Short answers about formats, privacy and quality.</p>
         </div>
@@ -1153,7 +1152,7 @@ export default function App() {
               rel="noreferrer"
               aria-label="Shifros Studio home"
             >
-              <img src="/brand/shifros-studio-reversed.svg" alt="Shifros Studio" />
+              <img src="/brand/shifros-studio-reversed.svg" alt="Shifros Studio" width="1052" height="400" />
             </a>
             <span className="footer-brand-rule" />
             <span>

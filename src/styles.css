@@ -336,9 +336,9 @@ kbd {
 }
 .brand img {
   display: block;
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.625rem;
+  width: 2.625rem;
+  height: 2.625rem;
+  border-radius: 0.65625rem;
 }
 .header-divider {
   margin-inline: 0;
